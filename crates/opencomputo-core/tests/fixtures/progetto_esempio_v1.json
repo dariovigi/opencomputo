@@ -1,0 +1,550 @@
+{
+  "formato": "opencomputo.progetto",
+  "versione_schema": 1,
+  "progetto": {
+    "id": "00000000-0000-0000-0000-000000000001",
+    "metadati": {
+      "titolo": "Nuova scuola primaria",
+      "committente": "Comune di Esempio",
+      "luogo": "Via Roma 1"
+    },
+    "contratto": {
+      "parametri": {
+        "ribasso": "12.5",
+        "ritenuta_garanzia": "0.5",
+        "manodopera_esclusa_dal_ribasso": false
+      }
+    },
+    "regole": {
+      "decimali_quantita": 2,
+      "decimali_prezzo": 2,
+      "decimali_importo": 2,
+      "decimali_percentuale": 2,
+      "modalita": "commerciale",
+      "arrotonda_quantita_parziali": true
+    },
+    "elenco_prezzi": {
+      "id": "00000000-0000-0000-0000-0000000003e8",
+      "nome": "Elenco prezzi di progetto",
+      "edizione": "2026",
+      "capitoli": [],
+      "voci": [
+        {
+          "id": "00000000-0000-0000-0000-0000000003e9",
+          "codice": "A.01.001",
+          "descrizione_breve": "Scavo di sbancamento",
+          "descrizione_estesa": "Scavo di sbancamento",
+          "unita_misura": "m³",
+          "prezzo": "8.50",
+          "natura": "lavoro",
+          "incidenza_manodopera": "25"
+        },
+        {
+          "id": "00000000-0000-0000-0000-0000000003ea",
+          "codice": "B.02.010",
+          "descrizione_breve": "Calcestruzzo per fondazioni C25/30",
+          "descrizione_estesa": "Calcestruzzo per fondazioni C25/30",
+          "unita_misura": "m³",
+          "prezzo": "145.30",
+          "natura": "lavoro",
+          "incidenza_manodopera": "18.5"
+        },
+        {
+          "id": "00000000-0000-0000-0000-0000000003eb",
+          "codice": "C.03.020",
+          "descrizione_breve": "Muratura in blocchi di laterizio",
+          "descrizione_estesa": "Muratura in blocchi di laterizio",
+          "unita_misura": "m²",
+          "prezzo": "42.75",
+          "natura": "lavoro",
+          "incidenza_manodopera": "45"
+        },
+        {
+          "id": "00000000-0000-0000-0000-0000000003ec",
+          "codice": "S.01.001",
+          "descrizione_breve": "Recinzione provvisoria di cantiere",
+          "descrizione_estesa": "Recinzione provvisoria di cantiere",
+          "unita_misura": "m",
+          "prezzo": "12.00",
+          "natura": "oneri_sicurezza"
+        }
+      ],
+      "risorse": [],
+      "analisi": []
+    },
+    "categorie": {
+      "super_categorie": [
+        {
+          "id": "00000000-0000-0000-0000-0000000007d1",
+          "codice": "OE",
+          "descrizione": "Opere edili"
+        }
+      ],
+      "categorie": [
+        {
+          "id": "00000000-0000-0000-0000-000000000835",
+          "codice": "SC",
+          "descrizione": "Scavi"
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000836",
+          "codice": "ST",
+          "descrizione": "Strutture"
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000837",
+          "codice": "MU",
+          "descrizione": "Murature"
+        }
+      ],
+      "sotto_categorie": []
+    },
+    "wbs": {
+      "nodi": [
+        {
+          "id": "00000000-0000-0000-0000-000000000bb9",
+          "codice": "01",
+          "descrizione": "Edificio A"
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000bba",
+          "padre": "00000000-0000-0000-0000-000000000bb9",
+          "codice": "01",
+          "descrizione": "Fondazioni"
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000bbb",
+          "padre": "00000000-0000-0000-0000-000000000bb9",
+          "codice": "02",
+          "descrizione": "Elevazioni"
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000bbc",
+          "codice": "02",
+          "descrizione": "Sicurezza"
+        }
+      ]
+    },
+    "computi": [
+      {
+        "id": "00000000-0000-0000-0000-000000000fa0",
+        "nome": "Computo metrico estimativo",
+        "tipo": "computo_metrico_estimativo",
+        "voci": [
+          {
+            "id": "00000000-0000-0000-0000-000000000fa1",
+            "prezzo": {
+              "origine": {
+                "prezzario": "00000000-0000-0000-0000-0000000003e8",
+                "voce": "00000000-0000-0000-0000-0000000003e9"
+              },
+              "fonte": "Elenco prezzi di progetto (2026)",
+              "codice": "A.01.001",
+              "descrizione_breve": "Scavo di sbancamento",
+              "descrizione_estesa": "Scavo di sbancamento",
+              "unita_misura": "m³",
+              "prezzo": "8.50",
+              "natura": "lavoro",
+              "incidenza_manodopera": "25"
+            },
+            "righi": [
+              {
+                "id": "00000000-0000-0000-0000-000000001389",
+                "tipo": "misura",
+                "descrizione": "Platea",
+                "lunghezza": {
+                  "valore": "12.00"
+                },
+                "larghezza": {
+                  "valore": "8.00"
+                },
+                "altezza_peso": {
+                  "valore": "1.20"
+                },
+                "segno": "positivo"
+              },
+              {
+                "id": "00000000-0000-0000-0000-00000000138a",
+                "tipo": "misura",
+                "descrizione": "Rampa di accesso",
+                "lunghezza": {
+                  "valore": "6.00"
+                },
+                "larghezza": {
+                  "valore": "3.00"
+                },
+                "altezza_peso": {
+                  "valore": "1.20"
+                },
+                "formula": "0,5*lun*lar*alt",
+                "segno": "positivo"
+              }
+            ],
+            "categorie": {
+              "super_categoria": "00000000-0000-0000-0000-0000000007d1",
+              "categoria": "00000000-0000-0000-0000-000000000835"
+            },
+            "wbs": "00000000-0000-0000-0000-000000000bba"
+          },
+          {
+            "id": "00000000-0000-0000-0000-000000000fa2",
+            "prezzo": {
+              "origine": {
+                "prezzario": "00000000-0000-0000-0000-0000000003e8",
+                "voce": "00000000-0000-0000-0000-0000000003ea"
+              },
+              "fonte": "Elenco prezzi di progetto (2026)",
+              "codice": "B.02.010",
+              "descrizione_breve": "Calcestruzzo per fondazioni C25/30",
+              "descrizione_estesa": "Calcestruzzo per fondazioni C25/30",
+              "unita_misura": "m³",
+              "prezzo": "145.30",
+              "natura": "lavoro",
+              "incidenza_manodopera": "18.5"
+            },
+            "righi": [
+              {
+                "id": "00000000-0000-0000-0000-000000001393",
+                "tipo": "misura",
+                "descrizione": "Platea",
+                "lunghezza": {
+                  "valore": "12.00"
+                },
+                "larghezza": {
+                  "valore": "8.00"
+                },
+                "altezza_peso": {
+                  "valore": "0.50"
+                },
+                "segno": "positivo"
+              },
+              {
+                "id": "00000000-0000-0000-0000-000000001394",
+                "tipo": "misura",
+                "descrizione": "Cordoli",
+                "parti_uguali": {
+                  "valore": "4"
+                },
+                "lunghezza": {
+                  "espressione": "7,50+0,30"
+                },
+                "larghezza": {
+                  "valore": "0.30"
+                },
+                "altezza_peso": {
+                  "valore": "0.40"
+                },
+                "segno": "positivo"
+              }
+            ],
+            "categorie": {
+              "super_categoria": "00000000-0000-0000-0000-0000000007d1",
+              "categoria": "00000000-0000-0000-0000-000000000836"
+            },
+            "wbs": "00000000-0000-0000-0000-000000000bba"
+          },
+          {
+            "id": "00000000-0000-0000-0000-000000000fa3",
+            "prezzo": {
+              "origine": {
+                "prezzario": "00000000-0000-0000-0000-0000000003e8",
+                "voce": "00000000-0000-0000-0000-0000000003eb"
+              },
+              "fonte": "Elenco prezzi di progetto (2026)",
+              "codice": "C.03.020",
+              "descrizione_breve": "Muratura in blocchi di laterizio",
+              "descrizione_estesa": "Muratura in blocchi di laterizio",
+              "unita_misura": "m²",
+              "prezzo": "42.75",
+              "natura": "lavoro",
+              "incidenza_manodopera": "45"
+            },
+            "righi": [
+              {
+                "id": "00000000-0000-0000-0000-00000000139c",
+                "tipo": "commento",
+                "descrizione": "Piano terra",
+                "segno": "positivo"
+              },
+              {
+                "id": "00000000-0000-0000-0000-00000000139d",
+                "tipo": "misura",
+                "descrizione": "Pareti lato lungo",
+                "parti_uguali": {
+                  "valore": "2"
+                },
+                "lunghezza": {
+                  "valore": "12.00"
+                },
+                "altezza_peso": {
+                  "valore": "3.00"
+                },
+                "segno": "positivo"
+              },
+              {
+                "id": "00000000-0000-0000-0000-00000000139e",
+                "tipo": "misura",
+                "descrizione": "Pareti lato corto",
+                "parti_uguali": {
+                  "valore": "2"
+                },
+                "lunghezza": {
+                  "valore": "8.00"
+                },
+                "altezza_peso": {
+                  "valore": "3.00"
+                },
+                "segno": "positivo"
+              },
+              {
+                "id": "00000000-0000-0000-0000-00000000139f",
+                "tipo": "misura",
+                "descrizione": "A dedurre finestre",
+                "parti_uguali": {
+                  "valore": "6"
+                },
+                "lunghezza": {
+                  "valore": "1.20"
+                },
+                "altezza_peso": {
+                  "valore": "1.50"
+                },
+                "segno": "deduzione"
+              }
+            ],
+            "categorie": {
+              "super_categoria": "00000000-0000-0000-0000-0000000007d1",
+              "categoria": "00000000-0000-0000-0000-000000000837"
+            },
+            "wbs": "00000000-0000-0000-0000-000000000bbb"
+          },
+          {
+            "id": "00000000-0000-0000-0000-000000000fa4",
+            "prezzo": {
+              "origine": {
+                "prezzario": "00000000-0000-0000-0000-0000000003e8",
+                "voce": "00000000-0000-0000-0000-0000000003ec"
+              },
+              "fonte": "Elenco prezzi di progetto (2026)",
+              "codice": "S.01.001",
+              "descrizione_breve": "Recinzione provvisoria di cantiere",
+              "descrizione_estesa": "Recinzione provvisoria di cantiere",
+              "unita_misura": "m",
+              "prezzo": "12.00",
+              "natura": "oneri_sicurezza"
+            },
+            "righi": [
+              {
+                "id": "00000000-0000-0000-0000-0000000013a7",
+                "tipo": "misura",
+                "descrizione": "",
+                "lunghezza": {
+                  "espressione": "2*(30+20)"
+                },
+                "segno": "positivo"
+              }
+            ],
+            "categorie": {},
+            "wbs": "00000000-0000-0000-0000-000000000bbc"
+          }
+        ]
+      }
+    ],
+    "contabilita": {
+      "libretto": {
+        "registrazioni": [
+          {
+            "id": "00000000-0000-0000-0000-000000000001",
+            "numero": 1,
+            "data": "2026-03-10",
+            "prezzo": {
+              "origine": {
+                "prezzario": "00000000-0000-0000-0000-0000000003e8",
+                "voce": "00000000-0000-0000-0000-0000000003e9"
+              },
+              "fonte": "Elenco prezzi di progetto (2026)",
+              "codice": "A.01.001",
+              "descrizione_breve": "Scavo di sbancamento",
+              "descrizione_estesa": "Scavo di sbancamento",
+              "unita_misura": "m³",
+              "prezzo": "8.50",
+              "natura": "lavoro",
+              "incidenza_manodopera": "25"
+            },
+            "righi": [
+              {
+                "id": "00000000-0000-0000-0000-00000000000a",
+                "tipo": "misura",
+                "descrizione": "",
+                "lunghezza": {
+                  "valore": "12"
+                },
+                "larghezza": {
+                  "valore": "8"
+                },
+                "altezza_peso": {
+                  "valore": "1.2"
+                },
+                "segno": "positivo"
+              }
+            ],
+            "categorie": {}
+          },
+          {
+            "id": "00000000-0000-0000-0000-000000000002",
+            "numero": 2,
+            "data": "2026-03-20",
+            "prezzo": {
+              "origine": {
+                "prezzario": "00000000-0000-0000-0000-0000000003e8",
+                "voce": "00000000-0000-0000-0000-0000000003ea"
+              },
+              "fonte": "Elenco prezzi di progetto (2026)",
+              "codice": "B.02.010",
+              "descrizione_breve": "Calcestruzzo per fondazioni C25/30",
+              "descrizione_estesa": "Calcestruzzo per fondazioni C25/30",
+              "unita_misura": "m³",
+              "prezzo": "145.30",
+              "natura": "lavoro",
+              "incidenza_manodopera": "18.5"
+            },
+            "righi": [
+              {
+                "id": "00000000-0000-0000-0000-000000000014",
+                "tipo": "misura",
+                "descrizione": "",
+                "lunghezza": {
+                  "valore": "12"
+                },
+                "larghezza": {
+                  "valore": "8"
+                },
+                "altezza_peso": {
+                  "valore": "0.5"
+                },
+                "segno": "positivo"
+              }
+            ],
+            "categorie": {}
+          },
+          {
+            "id": "00000000-0000-0000-0000-000000000003",
+            "numero": 3,
+            "data": "2026-03-25",
+            "prezzo": {
+              "origine": {
+                "prezzario": "00000000-0000-0000-0000-0000000003e8",
+                "voce": "00000000-0000-0000-0000-0000000003ec"
+              },
+              "fonte": "Elenco prezzi di progetto (2026)",
+              "codice": "S.01.001",
+              "descrizione_breve": "Recinzione provvisoria di cantiere",
+              "descrizione_estesa": "Recinzione provvisoria di cantiere",
+              "unita_misura": "m",
+              "prezzo": "12.00",
+              "natura": "oneri_sicurezza"
+            },
+            "righi": [
+              {
+                "id": "00000000-0000-0000-0000-00000000001e",
+                "tipo": "misura",
+                "descrizione": "",
+                "lunghezza": {
+                  "valore": "100"
+                },
+                "segno": "positivo"
+              }
+            ],
+            "categorie": {}
+          },
+          {
+            "id": "00000000-0000-0000-0000-000000000004",
+            "numero": 4,
+            "data": "2026-04-15",
+            "prezzo": {
+              "origine": {
+                "prezzario": "00000000-0000-0000-0000-0000000003e8",
+                "voce": "00000000-0000-0000-0000-0000000003eb"
+              },
+              "fonte": "Elenco prezzi di progetto (2026)",
+              "codice": "C.03.020",
+              "descrizione_breve": "Muratura in blocchi di laterizio",
+              "descrizione_estesa": "Muratura in blocchi di laterizio",
+              "unita_misura": "m²",
+              "prezzo": "42.75",
+              "natura": "lavoro",
+              "incidenza_manodopera": "45"
+            },
+            "righi": [
+              {
+                "id": "00000000-0000-0000-0000-000000000028",
+                "tipo": "misura",
+                "descrizione": "",
+                "lunghezza": {
+                  "valore": "24"
+                },
+                "larghezza": {
+                  "valore": "3"
+                },
+                "segno": "positivo"
+              }
+            ],
+            "categorie": {}
+          }
+        ]
+      },
+      "sal": [
+        {
+          "id": "00000000-0000-0000-0000-000000002329",
+          "numero": 1,
+          "lavori_a_tutto_il": "2026-03-31",
+          "data_emissione": "2026-04-05",
+          "stato": "emesso",
+          "registrazioni": [
+            "00000000-0000-0000-0000-000000000001",
+            "00000000-0000-0000-0000-000000000002",
+            "00000000-0000-0000-0000-000000000003"
+          ],
+          "riepilogo_emesso": {
+            "numero": 1,
+            "lordo_periodo": "9153.60",
+            "lavori_lordi": "7953.60",
+            "oneri_sicurezza": "1200.00",
+            "manodopera_esclusa": "0",
+            "soggetto_a_ribasso": "7953.60",
+            "ribasso": "994.20",
+            "importo_netto": "8159.40",
+            "ritenuta_garanzia": "40.80",
+            "credito_progressivo": "8118.60",
+            "certificati_precedenti": "0",
+            "importo_sal": "8118.60"
+          }
+        },
+        {
+          "id": "00000000-0000-0000-0000-00000000232a",
+          "numero": 2,
+          "lavori_a_tutto_il": "2026-04-30",
+          "data_emissione": "2026-05-06",
+          "stato": "emesso",
+          "registrazioni": [
+            "00000000-0000-0000-0000-000000000004"
+          ],
+          "riepilogo_emesso": {
+            "numero": 2,
+            "lordo_periodo": "3078.00",
+            "lavori_lordi": "11031.60",
+            "oneri_sicurezza": "1200.00",
+            "manodopera_esclusa": "0",
+            "soggetto_a_ribasso": "11031.60",
+            "ribasso": "1378.95",
+            "importo_netto": "10852.65",
+            "ritenuta_garanzia": "54.26",
+            "credito_progressivo": "10798.39",
+            "certificati_precedenti": "8118.60",
+            "importo_sal": "2679.79"
+          }
+        }
+      ]
+    }
+  }
+}

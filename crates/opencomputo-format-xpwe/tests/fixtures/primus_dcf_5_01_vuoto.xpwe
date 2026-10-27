@@ -1,0 +1,74 @@
+<?xml version="1.0"?>
+<PweDocumento>
+  <CopyRight>
+  </CopyRight>
+  <TipoDocumento>1</TipoDocumento>
+  <TipoFormato>XMLPwe</TipoFormato>
+  <Versione>5.01</Versione>
+  <SourceVersione>UNICO(b)</SourceVersione>
+  <SourceNome>PriMus-DCF</SourceNome>
+  <FileNameDocumento>C:\Documenti\Nuovo file.xpwe</FileNameDocumento>
+  <PweDatiGenerali>
+    <PweDGProgetto>
+      <PweDGDatiGenerali>
+        <PercPrezzi>0</PercPrezzi>
+        <Comune>
+        </Comune>
+        <Provincia>
+        </Provincia>
+        <Oggetto>Nuovo lavoro</Oggetto>
+        <Committente>
+        </Committente>
+        <Impresa>
+        </Impresa>
+        <ParteOpera>
+        </ParteOpera>
+      </PweDGDatiGenerali>
+    </PweDGProgetto>
+    <PweDGCapitoliCategorie>
+    </PweDGCapitoliCategorie>
+    <PweDGWBS>
+      <DGWBSAttiva>0</DGWBSAttiva>
+    </PweDGWBS>
+    <PweDGWBSCAP>
+      <DGWBSCAPAttiva>0</DGWBSCAPAttiva>
+      <DGWBSCAPItem ID="1">
+        <CU>{00000000-0000-0000-0000-000000000000}</CU>
+        <CUParent>{00000000-0000-0000-0000-000000000001}</CUParent>
+        <TITOLO>WBS CAPITOLI</TITOLO>
+        <CODICE />
+        <CodiceExt />
+      </DGWBSCAPItem>
+      <DGWBSCAPItem ID="2">
+        <CU>{00000000-0000-0000-0000-000000000000}</CU>
+        <CUParent>{00000000-0000-0000-0000-000000000000}</CUParent>
+        <TITOLO>&lt;NON assegnata&gt;</TITOLO>
+        <CODICE />
+        <CodiceExt />
+      </DGWBSCAPItem>
+    </PweDGWBSCAP>
+    <PweDGConfigurazione>
+      <PweDGConfigNumeri>
+        <Divisa>eur</Divisa>
+        <ConversioniIN>lire</ConversioniIN>
+        <FattoreConversione>1936.27</FattoreConversione>
+        <Cambio>1</Cambio>
+        <PartiUguali>8.3|0</PartiUguali>
+        <Lunghezza>9.3|0</Lunghezza>
+        <Larghezza>9.3|0</Larghezza>
+        <HPeso>10.3|0</HPeso>
+        <Quantita>11.2|0</Quantita>
+        <Prezzi>10.2|0</Prezzi>
+        <PrezziTotale>14.2|0</PrezziTotale>
+        <ConvPrezzi>11.2|0</ConvPrezzi>
+        <ConvPrezziTotale>15.2|0</ConvPrezziTotale>
+        <IncidenzaPercentuale>7.4|0</IncidenzaPercentuale>
+        <Aliquote>7.4|0</Aliquote>
+      </PweDGConfigNumeri>
+    </PweDGConfigurazione>
+  </PweDatiGenerali>
+  <PweMisurazioni>
+    <PweVociComputo>
+    </PweVociComputo>
+  </PweMisurazioni>
+</PweDocumento>

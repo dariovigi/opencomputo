@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "predefinita",
+  "description": "Permessi minimi: eventi e finestre di base, dialoghi per scegliere i file. Nessun accesso diretto al filesystem: lettura e scrittura passano dal comando `richiesta`.",
+  "windows": ["*"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-title",
+    "dialog:allow-open",
+    "dialog:allow-save"
+  ]
+}

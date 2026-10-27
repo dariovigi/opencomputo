@@ -1,0 +1,89 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OpenComputo",
+  "version": "0.1.0",
+  "identifier": "org.opencomputo.desktop",
+  "build": {
+    "frontendDist": "ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "principale",
+        "title": "OpenComputo",
+        "url": "index.html",
+        "width": 1320,
+        "height": 840,
+        "minWidth": 960,
+        "minHeight": 600,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "publisher": "OpenComputo",
+    "copyright": "© 2026 Autori di OpenComputo. Licenza EUPL-1.2.",
+    "license": "EUPL-1.2",
+    "licenseFile": "../../LICENSE",
+    "category": "Productivity",
+    "shortDescription": "Computi metrici estimativi e contabilità dei lavori pubblici",
+    "longDescription": "OpenComputo: computi metrici estimativi, elenco prezzi, libretto delle misure, registro di contabilità e SAL, con import da PriMus (XPWE, DCF non protetti) e report in PDF, Excel e CSV. Software libero (EUPL-1.2), non affiliato ad ACCA software.",
+    "fileAssociations": [
+      {
+        "ext": [
+          "ocp"
+        ],
+        "name": "Progetto OpenComputo",
+        "description": "Progetto di computo metrico estimativo",
+        "role": "Editor",
+        "mimeType": "application/x-opencomputo"
+      }
+    ],
+    "linux": {
+      "deb": {
+        "section": "misc",
+        "desktopTemplate": "linux/opencomputo.desktop",
+        "files": {
+          "/usr/share/mime/packages/opencomputo.xml": "linux/opencomputo-mime.xml"
+        }
+      },
+      "rpm": {
+        "release": "1",
+        "desktopTemplate": "linux/opencomputo.desktop",
+        "files": {
+          "/usr/share/mime/packages/opencomputo.xml": "linux/opencomputo-mime.xml"
+        }
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "windows": {
+      "wix": {
+        "language": "it-IT"
+      },
+      "nsis": {
+        "languages": [
+          "Italian"
+        ],
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

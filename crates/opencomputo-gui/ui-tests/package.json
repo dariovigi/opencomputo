@@ -1,0 +1,14 @@
+{
+  "name": "opencomputo-gui-test",
+  "private": true,
+  "description": "Test end-to-end dell'interfaccia di OpenComputo in Chromium con il motore reale (opencomputo servizio).",
+  "type": "module",
+  "license": "EUPL-1.2",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 gui.test.mjs",
+    "collaudo": "node --test --test-concurrency=1 collaudo.test.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.56.0"
+  }
+}

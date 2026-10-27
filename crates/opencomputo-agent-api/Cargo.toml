@@ -1,0 +1,25 @@
+[package]
+name = "opencomputo-agent-api"
+description = "Interfaccia a riga di comando e protocollo JSON di OpenComputo per persone e agenti AI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "opencomputo"
+path = "src/main.rs"
+
+[dependencies]
+opencomputo-application = { path = "../opencomputo-application" }
+opencomputo-core = { path = "../opencomputo-core" }
+opencomputo-storage = { path = "../opencomputo-storage" }
+opencomputo-io = { path = "../opencomputo-io" }
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+clap.workspace = true
+
+[lints]
+workspace = true

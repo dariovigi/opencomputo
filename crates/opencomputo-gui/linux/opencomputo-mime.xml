@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Tipo MIME dei progetti OpenComputo (.ocp): JSON, eventualmente compresso con gzip. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-opencomputo">
+    <comment>Progetto OpenComputo</comment>
+    <comment xml:lang="it">Progetto OpenComputo</comment>
+    <glob pattern="*.ocp"/>
+    <icon name="opencomputo-gui"/>
+  </mime-type>
+</mime-info>

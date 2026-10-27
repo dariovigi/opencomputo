@@ -1,0 +1,25 @@
+[package]
+name = "opencomputo-dcf-parser"
+description = "Lettura dei file DCF non protetti dell'ecosistema PriMus ed export sperimentale dell'elenco prezzi per OpenComputo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+opencomputo-core = { path = "../opencomputo-core" }
+quick-xml.workspace = true
+encoding_rs.workspace = true
+flate2.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+rust_decimal.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+rust_decimal_macros.workspace = true
+flate2.workspace = true
+
+[lints]
+workspace = true

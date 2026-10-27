@@ -1,0 +1,364 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fixture SINTETICA scritta a mano per i test di OpenComputo: nessun dato reale.
+     La struttura segue quella dedotta in src/struttura.rs (non verificata con PriMus). -->
+<PweDocumento>
+  <Versione>1.0</Versione>
+  <TipoDocumento>1</TipoDocumento>
+  <PweDatiGenerali>
+    <PweDGProgetto>
+      <PweDGDatiGenerali>
+        <Comune>Comune di Esempio</Comune>
+        <Provincia>XX</Provincia>
+        <Oggetto>Ampliamento scuola primaria</Oggetto>
+        <Committente>Comune di Esempio</Committente>
+        <Impresa/>
+      </PweDGDatiGenerali>
+    </PweDGProgetto>
+    <PweDGCapitoliCategorie>
+      <PweDGSuperCapitoli>
+        <DGSuperCapitoliItem ID="1">
+          <Codice>E</Codice>
+          <DesSintetica>Edilizia</DesSintetica>
+          <Percentuale>0</Percentuale>
+        </DGSuperCapitoliItem>
+      </PweDGSuperCapitoli>
+      <PweDGCapitoli>
+        <DGCapitoliItem ID="1">
+          <Codice>E.01</Codice>
+          <DesSintetica>Scavi e rinterri</DesSintetica>
+          <Percentuale>0</Percentuale>
+        </DGCapitoliItem>
+        <DGCapitoliItem ID="2">
+          <Codice>E.02</Codice>
+          <DesSintetica>Opere in cemento armato</DesSintetica>
+          <Percentuale>0</Percentuale>
+        </DGCapitoliItem>
+      </PweDGCapitoli>
+      <PweDGSubCapitoli/>
+      <PweDGSuperCategorie>
+        <DGSuperCategorieItem ID="1">
+          <Codice>A</Codice>
+          <DesSintetica>Corpo A</DesSintetica>
+          <Percentuale>0</Percentuale>
+        </DGSuperCategorieItem>
+      </PweDGSuperCategorie>
+      <PweDGCategorie>
+        <DGCategorieItem ID="1">
+          <Codice>FOND</Codice>
+          <DesSintetica>Fondazioni</DesSintetica>
+          <Percentuale>0</Percentuale>
+        </DGCategorieItem>
+        <DGCategorieItem ID="2">
+          <Codice>ELEV</Codice>
+          <DesSintetica>Elevazioni</DesSintetica>
+          <Percentuale>0</Percentuale>
+        </DGCategorieItem>
+      </PweDGCategorie>
+      <PweDGSubCategorie/>
+    </PweDGCapitoliCategorie>
+    <PweDGModuli>
+      <PweDGAnalisi>
+        <SpeseGenerali>15</SpeseGenerali>
+        <UtiliImpresa>10</UtiliImpresa>
+        <OneriAccessoriSc>0</OneriAccessoriSc>
+      </PweDGAnalisi>
+    </PweDGModuli>
+    <PweDGConfigurazione>
+      <PweDGConfigNumeri>
+        <PartiUguali>9.2|0</PartiUguali>
+        <Lunghezza>9.2|0</Lunghezza>
+        <Larghezza>9.2|0</Larghezza>
+        <HPeso>9.2|0</HPeso>
+        <Quantita>9.2|0</Quantita>
+        <Prezzi>9.2|0</Prezzi>
+        <PrezziTotale>14.2|0</PrezziTotale>
+      </PweDGConfigNumeri>
+    </PweDGConfigurazione>
+  </PweDatiGenerali>
+  <PweMisurazioni>
+    <PweElencoPrezzi>
+      <EPItem ID="1">
+        <TipoEP>0</TipoEP>
+        <Tariffa>E.01.010</Tariffa>
+        <Articolo/>
+        <DesRidotta>Scavo di sbancamento</DesRidotta>
+        <DesEstesa>Scavo di sbancamento eseguito con mezzi meccanici, compreso il carico su automezzo.</DesEstesa>
+        <DesBreve>Scavo di sbancamento</DesBreve>
+        <UnMisura>m³</UnMisura>
+        <Prezzo1>9.20</Prezzo1>
+        <Prezzo2>0</Prezzo2>
+        <IDSpCap>1</IDSpCap>
+        <IDCap>1</IDCap>
+        <IDSbCap>0</IDSbCap>
+        <Flags>0</Flags>
+        <Data>01/01/2026</Data>
+        <IncSIC>0</IncSIC>
+        <IncMDO>30</IncMDO>
+        <CodiceInterno>X-001</CodiceInterno>
+      </EPItem>
+      <EPItem ID="2">
+        <TipoEP>0</TipoEP>
+        <Tariffa>E.02.020</Tariffa>
+        <DesRidotta>Calcestruzzo C25/30 per fondazioni</DesRidotta>
+        <DesEstesa>Calcestruzzo C25/30 per fondazioni, gettato in opera &amp; vibrato.</DesEstesa>
+        <DesBreve>Calcestruzzo C25/30 per fondazioni</DesBreve>
+        <UnMisura>m³</UnMisura>
+        <Prezzo1>152.40</Prezzo1>
+        <IDSpCap>1</IDSpCap>
+        <IDCap>2</IDCap>
+        <IDSbCap>0</IDSbCap>
+        <Flags>0</Flags>
+        <IncSIC>0</IncSIC>
+        <IncMDO>20</IncMDO>
+        <PweEPAnalisi>
+          <PweEPAR>
+            <EPARItem ID="1">
+              <IDEP>-1</IDEP>
+              <Descrizione>MATERIALI</Descrizione>
+              <Misura/>
+              <Qt/>
+              <Prezzo/>
+            </EPARItem>
+          </PweEPAR>
+        </PweEPAnalisi>
+      </EPItem>
+      <EPItem ID="3">
+        <TipoEP>0</TipoEP>
+        <Tariffa>E.02.030</Tariffa>
+        <DesRidotta>Acciaio B450C</DesRidotta>
+        <DesEstesa>Acciaio B450C per armature, lavorato e posto in opera.</DesEstesa>
+        <DesBreve>Acciaio B450C</DesBreve>
+        <UnMisura>kg</UnMisura>
+        <Prezzo1>1.85</Prezzo1>
+        <IDSpCap>1</IDSpCap>
+        <IDCap>2</IDCap>
+        <IDSbCap>0</IDSbCap>
+        <Flags>0</Flags>
+        <IncSIC>0</IncSIC>
+        <IncMDO>35</IncMDO>
+      </EPItem>
+      <EPItem ID="4">
+        <TipoEP>0</TipoEP>
+        <Tariffa>S.01.001</Tariffa>
+        <DesRidotta>Recinzione di cantiere</DesRidotta>
+        <DesEstesa>Recinzione provvisoria di cantiere in rete metallica.</DesEstesa>
+        <DesBreve>Recinzione di cantiere</DesBreve>
+        <UnMisura>m</UnMisura>
+        <Prezzo1>14.50</Prezzo1>
+        <IDSpCap>0</IDSpCap>
+        <IDCap>0</IDCap>
+        <IDSbCap>0</IDSbCap>
+        <Flags>134217728</Flags>
+        <IncSIC>0</IncSIC>
+        <IncMDO>0</IncMDO>
+      </EPItem>
+      <EPItem ID="5">
+        <TipoEP>0</TipoEP>
+        <Tariffa>E.01.020</Tariffa>
+        <DesRidotta>Rinterro</DesRidotta>
+        <DesEstesa>Rinterro con materiale di risulta.</DesEstesa>
+        <DesBreve>Rinterro</DesBreve>
+        <UnMisura>m³</UnMisura>
+        <Prezzo1>4.10</Prezzo1>
+        <IDSpCap>1</IDSpCap>
+        <IDCap>1</IDCap>
+        <IDSbCap>0</IDSbCap>
+        <Flags>0</Flags>
+        <IncSIC>0</IncSIC>
+        <IncMDO>40</IncMDO>
+      </EPItem>
+      <EPItem ID="6">
+        <TipoEP>0</TipoEP>
+        <Tariffa>E.09.999</Tariffa>
+        <DesRidotta>Voce non utilizzata</DesRidotta>
+        <DesEstesa>Voce di elenco non utilizzata nel computo.</DesEstesa>
+        <DesBreve>Voce non utilizzata</DesBreve>
+        <UnMisura>cad</UnMisura>
+        <Prezzo1>1.00</Prezzo1>
+        <IDSpCap>0</IDSpCap>
+        <IDCap>0</IDCap>
+        <IDSbCap>0</IDSbCap>
+        <Flags>0</Flags>
+        <IncSIC>0</IncSIC>
+        <IncMDO>0</IncMDO>
+      </EPItem>
+    </PweElencoPrezzi>
+    <PweVociComputo>
+      <VCItem ID="1">
+        <IDEP>1</IDEP>
+        <Quantita>243.00</Quantita>
+        <DataMis>15/03/2026</DataMis>
+        <Flags>0</Flags>
+        <IDSpCat>1</IDSpCat>
+        <IDCat>1</IDCat>
+        <IDSbCat>0</IDSbCat>
+        <PweVCMisure>
+          <RGItem ID="1">
+            <IDVV>-2</IDVV>
+            <Descrizione>Sbancamento</Descrizione>
+            <PartiUguali/>
+            <Lunghezza>15.00</Lunghezza>
+            <Larghezza>10.00</Larghezza>
+            <HPeso>1.50</HPeso>
+            <Quantita>225.00</Quantita>
+            <Flags>0</Flags>
+          </RGItem>
+          <RGItem ID="2">
+            <IDVV>-2</IDVV>
+            <Descrizione>Rampa di accesso</Descrizione>
+            <PartiUguali>0.5</PartiUguali>
+            <Lunghezza>8.00</Lunghezza>
+            <Larghezza>4.00</Larghezza>
+            <HPeso>1.50</HPeso>
+            <Quantita>24.00</Quantita>
+            <Flags>0</Flags>
+          </RGItem>
+          <RGItem ID="3">
+            <IDVV>-2</IDVV>
+            <Descrizione>A dedurre pozzetto esistente</Descrizione>
+            <PartiUguali>-1</PartiUguali>
+            <Lunghezza>2.00</Lunghezza>
+            <Larghezza>2.00</Larghezza>
+            <HPeso>1.50</HPeso>
+            <Quantita>-6.00</Quantita>
+            <Flags>0</Flags>
+          </RGItem>
+        </PweVCMisure>
+      </VCItem>
+      <VCItem ID="2">
+        <IDEP>2</IDEP>
+        <Quantita>28.65</Quantita>
+        <DataMis>15/03/2026</DataMis>
+        <Flags>0</Flags>
+        <IDSpCat>1</IDSpCat>
+        <IDCat>1</IDCat>
+        <IDSbCat>0</IDSbCat>
+        <PweVCMisure>
+          <RGItem ID="4">
+            <IDVV>-2</IDVV>
+            <Descrizione>Plinti</Descrizione>
+            <PartiUguali>6</PartiUguali>
+            <Lunghezza>1.80</Lunghezza>
+            <Larghezza>1.80</Larghezza>
+            <HPeso>0.80</HPeso>
+            <Quantita>15.55</Quantita>
+            <Flags>0</Flags>
+          </RGItem>
+          <RGItem ID="5">
+            <IDVV>-2</IDVV>
+            <Descrizione>Travi rovesce</Descrizione>
+            <PartiUguali>2</PartiUguali>
+            <Lunghezza>15.00+0.60</Lunghezza>
+            <Larghezza>0.60</Larghezza>
+            <HPeso>0.70</HPeso>
+            <Quantita>13.10</Quantita>
+            <Flags>0</Flags>
+          </RGItem>
+          <RGItem ID="6">
+            <IDVV>-2</IDVV>
+            <Descrizione>Magrone di sottofondazione escluso</Descrizione>
+            <PartiUguali/>
+            <Lunghezza/>
+            <Larghezza/>
+            <HPeso/>
+            <Quantita>0</Quantita>
+            <Flags>0</Flags>
+          </RGItem>
+        </PweVCMisure>
+      </VCItem>
+      <VCItem ID="3">
+        <IDEP>3</IDEP>
+        <Quantita>587.10</Quantita>
+        <DataMis>15/03/2026</DataMis>
+        <Flags>0</Flags>
+        <IDSpCat>1</IDSpCat>
+        <IDCat>1</IDCat>
+        <IDSbCat>0</IDSbCat>
+        <PweVCMisure>
+          <RGItem ID="7">
+            <IDVV>-2</IDVV>
+            <Descrizione>Armatura plinti</Descrizione>
+            <PartiUguali>6</PartiUguali>
+            <Lunghezza/>
+            <Larghezza/>
+            <HPeso>85.50</HPeso>
+            <Quantita>513.00</Quantita>
+            <Flags>0</Flags>
+          </RGItem>
+          <RGItem ID="8">
+            <IDVV>-2</IDVV>
+            <Descrizione>Parziale plinti</Descrizione>
+            <PartiUguali/>
+            <Lunghezza/>
+            <Larghezza/>
+            <HPeso/>
+            <Quantita>513.00</Quantita>
+            <Flags>2</Flags>
+          </RGItem>
+          <RGItem ID="9">
+            <IDVV>-2</IDVV>
+            <Descrizione>Armatura travi rovesce</Descrizione>
+            <PartiUguali/>
+            <Lunghezza>30.00</Lunghezza>
+            <Larghezza/>
+            <HPeso>2.47</HPeso>
+            <Quantita>74.10</Quantita>
+            <Flags>0</Flags>
+          </RGItem>
+        </PweVCMisure>
+      </VCItem>
+      <VCItem ID="4">
+        <IDEP>4</IDEP>
+        <Quantita>50.00</Quantita>
+        <DataMis>15/03/2026</DataMis>
+        <Flags>0</Flags>
+        <IDSpCat>0</IDSpCat>
+        <IDCat>0</IDCat>
+        <IDSbCat>0</IDSbCat>
+        <PweVCMisure>
+          <RGItem ID="10">
+            <IDVV>-2</IDVV>
+            <Descrizione>Perimetro del cantiere</Descrizione>
+            <PartiUguali/>
+            <Lunghezza>2*(15+10)</Lunghezza>
+            <Larghezza/>
+            <HPeso/>
+            <Quantita>50.00</Quantita>
+            <Flags>0</Flags>
+          </RGItem>
+        </PweVCMisure>
+      </VCItem>
+      <VCItem ID="5">
+        <IDEP>5</IDEP>
+        <Quantita>214.35</Quantita>
+        <DataMis>20/03/2026</DataMis>
+        <Flags>0</Flags>
+        <IDSpCat>1</IDSpCat>
+        <IDCat>1</IDCat>
+        <IDSbCat>0</IDSbCat>
+        <PweVCMisure>
+          <RGItem ID="11">
+            <IDVV>1</IDVV>
+            <Descrizione>Vedi voce n. 1</Descrizione>
+            <PartiUguali/>
+            <Lunghezza/>
+            <Larghezza/>
+            <HPeso/>
+            <Quantita>243.00</Quantita>
+            <Flags>0</Flags>
+          </RGItem>
+          <RGItem ID="12">
+            <IDVV>-2</IDVV>
+            <Descrizione>A dedurre volume delle fondazioni</Descrizione>
+            <PartiUguali>-1</PartiUguali>
+            <Lunghezza/>
+            <Larghezza/>
+            <HPeso>28.65</HPeso>
+            <Quantita>-28.65</Quantita>
+            <Flags>0</Flags>
+          </RGItem>
+        </PweVCMisure>
+      </VCItem>
+    </PweVociComputo>
+  </PweMisurazioni>
+</PweDocumento>

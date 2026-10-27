@@ -1,0 +1,16 @@
+[package]
+name = "opencomputo-storage"
+description = "File di progetto di OpenComputo: salvataggio atomico, copie di sicurezza, compressione"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+opencomputo-core = { path = "../opencomputo-core" }
+flate2.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

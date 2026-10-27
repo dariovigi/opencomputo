@@ -1,0 +1,7 @@
+/target
+**/*.rs.bk
+.DS_Store
+# Generati da tauri-build
+/crates/opencomputo-gui/gen/
+# Dipendenze dei test dell'interfaccia
+node_modules/

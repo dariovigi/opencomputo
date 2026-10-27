@@ -1,0 +1,27 @@
+[package]
+name = "opencomputo-application"
+description = "Casi d'uso di OpenComputo: comandi, annulla/ripristina, import, export e report"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+opencomputo-core = { path = "../opencomputo-core" }
+opencomputo-storage = { path = "../opencomputo-storage" }
+opencomputo-format-xpwe = { path = "../opencomputo-format-xpwe" }
+opencomputo-dcf-parser = { path = "../opencomputo-dcf-parser" }
+opencomputo-io = { path = "../opencomputo-io" }
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+rust_decimal.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+rust_decimal_macros.workspace = true
+
+[lints]
+workspace = true
