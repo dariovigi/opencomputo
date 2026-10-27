@@ -2,7 +2,7 @@
 
 import { h, sostituisci, numero, percento, natura, rimanda, decimale, opzionale, controllo, chiediCampi, conferma, notifica, preferenza, salvaPreferenza } from '../dom.js';
 import { chiedi, esegui, mostraErrore, stato, vai, computoCorrente, agisci } from '../stato.js';
-import { scegliFile } from '../piattaforma.js';
+import { scegliFile, FILTRO_PREZZARI } from '../piattaforma.js';
 import { griglia } from '../griglia.js';
 import * as trascina from '../trascina.js';
 import { pannelloFiltri } from '../filtri.js';
@@ -332,7 +332,7 @@ async function aggiungiAlComputo(codici) {
 }
 
 async function caricaPrezzario() {
-  const percorso = await scegliFile('Carica prezzario di consultazione', [{ name: 'Prezzari (DCF, XPWE, OpenComputo)', extensions: ['dcf', 'DCF', 'xpwe', 'XPWE', 'ocp', 'json'] }]);
+  const percorso = await scegliFile('Carica prezzario di consultazione', FILTRO_PREZZARI);
   if (!percorso) return;
   const base = percorso.split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
   const r = await agisci({ richiesta: 'carica_prezzario', nome: base, percorso });

@@ -12,8 +12,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use opencomputo_agent_api::assistente::{Ambiente, FILE_CONFIGURAZIONE};
-use opencomputo_agent_api::servizio::Servizio;
+use opencomputo_agent_api::assistente::{Ambiente, FILE_CONFIGURAZIONE, Indirizzi};
+use opencomputo_agent_api::servizio::{Passo, Servizio};
 use opencomputo_assistente::provider::chiavi::{ArchivioChiavi, ChiaviInMemoria};
 use opencomputo_assistente::provider::{
     Attesa, ErroreTrasporto, Provider, RichiestaHttp, RispostaHttp, Trasporto,
@@ -191,6 +191,7 @@ fn servizio(d: &std::path::Path, chiavi: &Arc<ChiaviInMemoria>, finto: &Arc<Fint
         chiavi: chiavi.clone(),
         trasporto: finto.clone(),
         attesa: Arc::new(SenzaAttesa),
+        indirizzi: Indirizzi::default(),
     })
 }
 
@@ -697,4 +698,167 @@ fn servizio_trasferibile_tra_thread() {
     fn invia<T: Send + 'static>() {}
     invia::<Servizio>();
     invia::<std::sync::Mutex<Servizio>>();
+}
+
+fn lavoro(s: &mut Servizio, v: Value) -> Box<opencomputo_agent_api::assistente::Lavoro> {
+    match s.avvia(v) {
+        Passo::Lavoro(l) => l,
+        Passo::Risposta { risposta, .. } => panic!("atteso un lavoro: {risposta:#}"),
+    }
+}
+
+#[test]
+fn proposta_eseguita_fuori_dal_servizio_con_anteprima() {
+    let (_d, _chiavi, _finto, mut s) = pronto("fuori");
+    let l = lavoro(
+        &mut s,
+        json!({"richiesta": "assistente_proponi", "prezzario": "prova", "testo": "Tinteggiatura di una parete di 4 x 3 m", "id": 7}),
+    );
+    // Mentre il lavoro è in corso in un altro thread il servizio risponde ad altro.
+    let t = std::thread::spawn(move || l.esegui(None));
+    let info = chiedi(&mut s, json!({"richiesta": "info"}));
+    assert_eq!(info["computi"][0]["voci"], 0);
+    let (r, cambiato) = s.completa(t.join().unwrap());
+    assert!(!cambiato);
+    assert_eq!(
+        (r["ok"].as_bool(), r["id"].as_i64()),
+        (Some(true), Some(7)),
+        "{r:#}"
+    );
+    let prova = &r["risultato"]["prova"];
+    assert_eq!(prova["ok"], true);
+    assert_eq!(prova["computo"], "Computo metrico estimativo");
+    let voci = prova["voci"].as_array().unwrap();
+    assert_eq!(voci.len(), 1);
+    assert_eq!(voci[0]["lavorazione"], "L01");
+    assert_eq!(voci[0]["codice"], "T.01");
+    assert_eq!(voci[0]["quantita"], "12.00");
+    assert_eq!(voci[0]["importo"], "86.40");
+    assert_eq!(prova["esito"]["totali"][0]["dopo"], "86.40");
+    // L'anteprima non tocca il progetto; la proposta resta da applicare.
+    assert_eq!(
+        chiedi(&mut s, json!({"richiesta": "info"}))["computi"][0]["voci"],
+        0
+    );
+    let esito = chiedi(&mut s, json!({"richiesta": "assistente_applica"}));
+    assert_eq!(esito["applicato"], true);
+}
+
+#[test]
+fn progetto_cambiato_durante_la_proposta() {
+    let (d, _chiavi, _finto, mut s) = pronto("cambiato");
+    let l = lavoro(
+        &mut s,
+        json!({"richiesta": "assistente_proponi", "prezzario": "prova", "testo": "parete di 4 x 3 m"}),
+    );
+    chiedi(&mut s, json!({"richiesta": "chiudi", "forza": true}));
+    chiedi(
+        &mut s,
+        json!({"richiesta": "nuovo", "titolo": "Altro", "percorso": d.join("altro.ocp")}),
+    );
+    let (r, _) = s.completa(l.esegui(None));
+    assert_eq!(r["ok"], false);
+    assert_eq!(r["errore"]["motivo"], "progetto_cambiato");
+    let e = rifiuta(&mut s, json!({"richiesta": "assistente_applica"}));
+    assert_eq!(e["motivo"], "nessuna_proposta");
+}
+
+#[test]
+fn annullamento_dall_interruttore() {
+    let (_d, _chiavi, finto, mut s) = pronto("annulla");
+    let interruttore = s.interruttore();
+    let l = lavoro(
+        &mut s,
+        json!({"richiesta": "assistente_indicizza", "prezzario": "prova"}),
+    );
+    interruttore.annulla();
+    let (r, _) = s.completa(l.esegui(None));
+    assert_eq!(r["errore"]["motivo"], "annullato", "{r:#}");
+    assert!(finto.ricevute("/embeddings").is_empty());
+    // Il lavoro successivo ha un segnale nuovo.
+    let l = lavoro(
+        &mut s,
+        json!({"richiesta": "assistente_indicizza", "prezzario": "prova"}),
+    );
+    let (r, _) = s.completa(l.esegui(None));
+    assert_eq!(r["ok"], true, "{r:#}");
+    // Dal servizio a righe la richiesta è accettata (non c'è nulla in corso).
+    assert_eq!(
+        chiedi(&mut s, json!({"richiesta": "assistente_annulla"}))["annullamento"],
+        "chiesto"
+    );
+    // Le richieste brevi non diventano lavori.
+    assert!(matches!(
+        s.avvia(json!({"richiesta": "info"})),
+        Passo::Risposta {
+            cambiato: false,
+            ..
+        }
+    ));
+    assert!(matches!(
+        s.avvia(json!({"richiesta": "assistente_cerca", "prezzario": "nessuno", "testo": "x"})),
+        Passo::Risposta {
+            cambiato: false,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn stato_dell_indice_e_modelli() {
+    let (_d, _chiavi, finto, mut s) = pronto("indice-stato");
+    let i = chiedi(
+        &mut s,
+        json!({"richiesta": "assistente_indice", "prezzario": "prova"}),
+    );
+    assert_eq!(
+        (
+            i["voci"].as_u64(),
+            i["indicizzate"].as_u64(),
+            i["completo"].as_bool(),
+            i["ricerca"].as_str()
+        ),
+        (Some(22), Some(0), Some(false), Some("testuale"))
+    );
+    chiedi(
+        &mut s,
+        json!({"richiesta": "assistente_indicizza", "prezzario": "prova"}),
+    );
+    let i = chiedi(
+        &mut s,
+        json!({"richiesta": "assistente_indice", "prezzario": "prova"}),
+    );
+    assert_eq!(
+        (
+            i["indicizzate"].as_u64(),
+            i["completo"].as_bool(),
+            i["ricerca"].as_str()
+        ),
+        (Some(22), Some(true), Some("ibrida"))
+    );
+    assert_eq!(i["spazio"]["dimensioni"], DIM);
+    // Lo stato dell'indice non fa chiamate.
+    assert_eq!(finto.ricevute("/embeddings").len(), 1);
+
+    let st = chiedi(&mut s, json!({"richiesta": "assistente_stato"}));
+    let modelli = st["modelli"]["generazione"].as_array().unwrap();
+    assert!(modelli.contains(&json!("claude-sonnet-5-5")));
+    assert!(
+        st["modelli"]["senza_strumento_forzato"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("claude-opus-5-5"))
+    );
+    let e = rifiuta(
+        &mut s,
+        json!({"richiesta": "assistente_configura", "configurazione": {"modello_embedding": "text-embedding-ada-002"}}),
+    );
+    assert_eq!(
+        e["motivo"], "configurazione",
+        "dimensioni 8 non accettate da ada-002"
+    );
+    chiedi(
+        &mut s,
+        json!({"richiesta": "assistente_configura", "configurazione": {"modello_embedding": "text-embedding-ada-002", "dimensioni_embedding": 0}}),
+    );
 }

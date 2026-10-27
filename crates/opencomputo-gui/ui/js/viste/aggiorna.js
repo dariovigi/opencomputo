@@ -4,7 +4,7 @@
 
 import { h, sostituisci, numero, percento, notifica, rimanda, preferenza, salvaPreferenza, sommaImporti } from '../dom.js';
 import { chiedi, esegui, agisci, stato, mostraErrore, vai } from '../stato.js';
-import { scegliFile } from '../piattaforma.js';
+import { scegliFile, FILTRO_PREZZARI } from '../piattaforma.js';
 import { griglia } from '../griglia.js';
 import { pannelloFiltri } from '../filtri.js';
 
@@ -247,7 +247,7 @@ function sezioni(righe) {
 }
 
 async function caricaListino() {
-  const percorso = await scegliFile('Carica il nuovo listino', [{ name: 'Prezzari (DCF, XPWE, OpenComputo)', extensions: ['dcf', 'DCF', 'xpwe', 'XPWE', 'ocp', 'json'] }]);
+  const percorso = await scegliFile('Carica il nuovo listino', FILTRO_PREZZARI);
   if (!percorso) return;
   const base = percorso.split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
   const r = await agisci({ richiesta: 'carica_prezzario', nome: base, percorso });

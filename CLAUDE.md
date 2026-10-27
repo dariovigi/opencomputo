@@ -15,9 +15,9 @@
   aggiornamento dell'elenco da un nuovo listino (ADR 0022), modello
   tradizionale per tutti i documenti (ADR 0023), cronoprogramma dei lavori con Gantt
   (ADR 0024, schema 7, 57 comandi; sviluppato sul ramo `cronoprogramma`), assistente AI
-  fasi 2 e 3: listini CSV/JSON, crate `opencomputo-assistente` e `opencomputo-rete`,
-  provider OpenAI e Anthropic, portachiavi, consenso, servizio JSON e CLI (ADR 0025, ramo
-  `assistente`; fase 4 interfaccia solo su approvazione esplicita del titolare).
+  fasi 2–4: listini CSV/JSON, crate `opencomputo-assistente` e `opencomputo-rete`,
+  provider OpenAI e Anthropic, portachiavi, consenso, servizio JSON e CLI, vista
+  «Assistente AI» nell'interfaccia (ADR 0025, ramo `assistente`).
   Nuovi lavori solo su richiesta dell'utente. Aperti: confronto con un export XPWE reale
   con voci, prova su macOS e Windows.
 * `cargo deny check` deve restare pulito: nessuna eccezione per vulnerabilità; le
@@ -29,7 +29,8 @@
   `richiesta` (protocollo del servizio JSON). Il testo dei dati entra nel DOM solo con
   `h()`/`textContent`, mai come HTML; niente script o stili in linea (CSP). Ogni modifica
   dell'interfaccia va provata con `npm test` in `ui-tests` (dopo
-  `cargo build -p opencomputo-agent-api`).
+  `cargo build -p opencomputo-agent-api --features banco-di-prova`: i test dell'assistente
+  usano un provider finto locale e chiavi in memoria; la feature non va mai nei pacchetti).
 * Ogni modifica al progetto passa da `opencomputo-application` (`Comando`, `Sessione`):
   GUI e CLI non scrivono il modello né chiamano i formati direttamente (ADR 0008).
   Aggiungendo una variante a `Comando` aggiornare gli esempi in

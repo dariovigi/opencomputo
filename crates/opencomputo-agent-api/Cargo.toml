@@ -26,6 +26,9 @@ clap.workspace = true
 [features]
 # Solo per lo sviluppo: chiavi anche da OPENAI_API_KEY e ANTHROPIC_API_KEY.
 chiavi-da-ambiente = ["opencomputo-rete/chiavi-da-ambiente"]
+# Solo per i test dell'interfaccia: con OPENCOMPUTO_PROVIDER_DI_PROVA=http://127.0.0.1:…
+# le chiamate ai provider vanno a un server locale finto e le chiavi restano in memoria.
+banco-di-prova = []
 
 [lints]
 workspace = true

@@ -1,6 +1,6 @@
 # ADR 0025 — Assistente AI per il computo e listini CSV/JSON
 
-* Stato: accettato (fase 2: parti locali; fase 3: provider, portachiavi, consenso)
+* Stato: accettato (fase 2: parti locali; fase 3: provider, portachiavi, consenso; fase 4: interfaccia)
 * Data: 2026-10-27
 
 ## Contesto
@@ -137,8 +137,41 @@ Il titolare ha chiesto inoltre di poter importare prezzari in DCF.
     `assistente` e un `motivo` stabile (`consenso_mancante`, `chiave_assente`,
     `chiave_rifiutata`, `quota`, `rete`, `modello_non_supportato`, …); dalla riga di
     comando escono con codice 4.
-22. **Chiamate bloccanti.** I client sono sincroni: l'interfaccia (fase 4) dovrà
-    eseguirli fuori dal thread principale e potrà interromperli con `Annullamento`.
+22. **Chiamate bloccanti.** I client sono sincroni: l'interfaccia li esegue fuori dal
+    thread principale (decisione 24).
+
+### Fase 4 (2026-10-27)
+
+23. **Una vista JavaScript** («Assistente AI») in `opencomputo-gui`, come le altre: parla
+    con il motore solo con il comando `richiesta`; testo dei dati solo con `h()`. Tre
+    schede: proposta, prezzari e indice, impostazioni. L'avviso che i dati escono dal
+    computer è sempre visibile; senza consenso la scheda della proposta mostra solo il
+    testo da accettare; l'indicizzazione chiede conferma dicendo quante voci verranno
+    inviate. Le chiavi si inseriscono in campi password, vanno al portachiavi e non
+    tornano mai all'interfaccia (lo stato dice solo se ci sono).
+24. **Operazioni lunghe senza bloccare il servizio.** Indice, indicizzazione, ricerca e
+    proposta sono un `Lavoro`: `Servizio::avvia` lo prepara (controlli di consenso e
+    chiavi, copia del prezzario e del progetto), il comando Tauri lo esegue con
+    `spawn_blocking` senza tenere il servizio, `Servizio::completa` lo conclude. Le altre
+    finestre restano utilizzabili; gli indici di ogni prezzario hanno un proprio
+    lucchetto. `assistente_annulla` ferma il lavoro in corso attraverso un
+    `Interruttore` condiviso, senza attendere il servizio. Il servizio a righe e la CLI
+    eseguono gli stessi lavori in linea.
+25. **Progetto cambiato durante la proposta.** Ogni cambio di progetto (apri, nuovo,
+    importa, chiudi) aumenta una generazione: una proposta conclusa su un altro progetto
+    è rifiutata (`progetto_cambiato`) e non lascia nulla da applicare.
+26. **Anteprima calcolata dal core.** Prima di mostrare la proposta il motore la prova
+    con la politica della sessione e la esegue su una copia del progetto: quantità,
+    prezzo e importo di ogni voce vengono dalla vista del computo del core
+    (`verifica::anteprima`), non dall'interfaccia né dal modello.
+27. **Avanzamento** dell'indicizzazione: evento Tauri `assistente-avanzamento` alla
+    finestra che l'ha chiesta; nel servizio a righe, con `--avanzamento`, righe
+    `{"avanzamento": …}` prima della risposta.
+28. **Banco di prova.** I test dell'interfaccia usano un server locale che imita OpenAI e
+    Anthropic. Il motore lo usa solo se compilato con la feature di sviluppo
+    `banco-di-prova` e con `OPENCOMPUTO_PROVIDER_DI_PROVA=http://127.0.0.1:…`; in quel
+    caso le chiavi restano in memoria. La feature non entra nei pacchetti; il banco
+    rifiuta di partire se il motore non la ha, per non toccare il portachiavi vero.
 
 ## Conseguenze
 

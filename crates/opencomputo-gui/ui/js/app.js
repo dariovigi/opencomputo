@@ -16,8 +16,9 @@ import * as nuovi from './viste/nuovi.js';
 import * as report from './viste/report.js';
 import * as cronoprogramma from './viste/cronoprogramma.js';
 import * as problemi from './viste/problemi.js';
+import * as assistente from './viste/assistente.js';
 
-const VISTE = { generale, elenco, aggiorna: aggiornaListino, analisi, computo, classificazione, libretto, nuovi, sal, conto, cronoprogramma, report, problemi };
+const VISTE = { generale, elenco, aggiorna: aggiornaListino, analisi, computo, classificazione, libretto, nuovi, sal, conto, cronoprogramma, report, problemi, assistente };
 
 // Finestre secondarie: index.html#vista&computo=Nome
 const indirizzo = new URLSearchParams(location.hash.slice(1));
@@ -235,6 +236,8 @@ function disegnaGuscio() {
         voceNav('conto', 'Conto finale', {}, i.contabilita.conto_finale ? h('span', { class: 'conteggio' }, i.contabilita.conto_finale === 'emesso' ? '✓' : 'bozza') : null),
         h('h3', null, 'Pianificazione'),
         voceNav('cronoprogramma', 'Cronoprogramma'),
+        h('h3', null, 'Assistente'),
+        voceNav('assistente', 'Assistente AI'),
         h('h3', null, 'Uscite'),
         voceNav('report', 'Report ed export'),
         voceNav('problemi', 'Controlli', {}, badge));

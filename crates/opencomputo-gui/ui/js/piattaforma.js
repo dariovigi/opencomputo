@@ -18,6 +18,9 @@ export function inviaRichiesta(richiesta) {
   return T.core.invoke('richiesta', { richiesta });
 }
 
+/** Filtro dei prezzari caricabili (DCF non protetti, XPWE, listini CSV e JSON, progetti). */
+export const FILTRO_PREZZARI = [{ name: 'Prezzari (DCF, XPWE, CSV, JSON, OpenComputo)', extensions: ['dcf', 'DCF', 'xpwe', 'XPWE', 'csv', 'CSV', 'json', 'ocp'] }];
+
 /** Sceglie un file da aprire. `filtri`: [{name, extensions}]. Restituisce il percorso o null. */
 export async function scegliFile(titolo, filtri, { cartella = false } = {}) {
   const r = await T.dialog.open({ title: titolo, multiple: false, directory: cartella, filters: cartella ? undefined : filtri });

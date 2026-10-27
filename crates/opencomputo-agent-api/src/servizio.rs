@@ -20,7 +20,9 @@ use serde_json::{Value, json};
 
 use opencomputo_assistente::provider::Provider;
 
-use crate::assistente::{self, Ambiente, Assistente, Avanzamento};
+use crate::assistente::{
+    self, Ambiente, Assistente, Avanzamento, Bisogno, EsitoLavoro, Interruttore, Lavoro, TipoLavoro,
+};
 use crate::{riepilogo, schema};
 
 /// Risultati mostrati da `cerca` se non indicato diversamente.
@@ -251,6 +253,30 @@ pub enum Richiesta {
     },
     /// Assistente AI: esegue i comandi dell'ultima proposta (passo annullabile).
     AssistenteApplica {},
+    /// Assistente AI: stato dell'indice di un prezzario caricato (voci, voci indicizzate,
+    /// tipo di ricerca possibile), senza chiamate.
+    AssistenteIndice {
+        /// Nome del prezzario caricato.
+        prezzario: String,
+    },
+    /// Assistente AI: annulla l'operazione lunga in corso (indicizzazione, ricerca,
+    /// proposta). Utile solo quando il servizio esegue i lavori in parallelo (interfaccia
+    /// grafica); il servizio a righe le esegue una per volta.
+    AssistenteAnnulla {},
+}
+
+impl Richiesta {
+    /// `true` per le operazioni lunghe dell'assistente, eseguibili come [`Lavoro`].
+    #[must_use]
+    pub fn e_lavoro(&self) -> bool {
+        matches!(
+            self,
+            Self::AssistenteIndice { .. }
+                | Self::AssistenteIndicizza { .. }
+                | Self::AssistenteCerca { .. }
+                | Self::AssistenteProponi { .. }
+        )
+    }
 }
 
 fn richiesta(messaggio: impl Into<String>) -> ErroreApplicazione {
@@ -358,6 +384,25 @@ pub struct Servizio {
     /// Ambiente dell'assistente; se assente quello del sistema.
     ambiente: Option<Ambiente>,
     avanzamento: Option<Avanzamento>,
+    interruttore: Interruttore,
+    /// Cresce a ogni cambio di progetto: un lavoro concluso su un altro progetto non
+    /// lascia proposte da applicare.
+    generazione: u64,
+}
+
+/// Primo passo di una richiesta: risposta pronta oppure lavoro da eseguire.
+#[derive(Debug)]
+pub enum Passo {
+    /// Risposta e indicazione di cambiamento (come [`Servizio::rispondi_valore`]).
+    Risposta {
+        /// Risposta completa.
+        risposta: Value,
+        /// `true` se lo stato può essere cambiato.
+        cambiato: bool,
+    },
+    /// Operazione lunga dell'assistente: da eseguire (anche in un altro thread) e poi da
+    /// concludere con [`Servizio::completa`].
+    Lavoro(Box<Lavoro>),
 }
 
 impl std::fmt::Debug for Servizio {
@@ -411,6 +456,13 @@ impl Servizio {
             .ok_or_else(|| richiesta("assistente non disponibile"))
     }
 
+    /// Interruttore delle operazioni lunghe dell'assistente: si può usare da un altro
+    /// thread mentre un [`Lavoro`] è in corso.
+    #[must_use]
+    pub fn interruttore(&self) -> Interruttore {
+        self.interruttore.clone()
+    }
+
     fn gestisci_assistente(&mut self, r: Richiesta) -> Result<Value, ErroreApplicazione> {
         match r {
             Richiesta::AssistenteStato {} => self.assistente()?.stato(),
@@ -423,54 +475,151 @@ impl Servizio {
             Richiesta::AssistenteConsenso { accetto, versione } => {
                 self.assistente()?.consenso(accetto, versione)
             }
-            Richiesta::AssistenteIndicizza { prezzario } => {
+            Richiesta::AssistenteApplica {} => {
                 self.aperta()?;
-                let avanzamento = self.avanzamento.take();
-                let r =
-                    self.con_assistente(|a, s| a.indicizza(s, &prezzario, avanzamento.as_ref()));
-                self.avanzamento = avanzamento;
-                r
+                let comandi = self.assistente()?.da_applicare()?;
+                Ok(valore(&self.aperta_mut()?.esegui(&comandi)?))
+            }
+            Richiesta::AssistenteAnnulla {} => {
+                self.interruttore.annulla();
+                Ok(json!({"annullamento": "chiesto"}))
+            }
+            r if r.e_lavoro() => {
+                let l = self.prepara(r, None)?;
+                let e = l.esegui(self.avanzamento.as_deref().map(|f| f as &dyn Fn(&Value)));
+                self.concludi(e)
+            }
+            _ => Err(richiesta("richiesta non dell'assistente")),
+        }
+    }
+
+    /// Prepara un lavoro: controlla progetto, prezzario, consenso e chiavi, e copia i dati.
+    fn prepara(&mut self, r: Richiesta, id: Option<Value>) -> Result<Lavoro, ErroreApplicazione> {
+        let (nome, tipo, bisogno) = match r {
+            Richiesta::AssistenteIndice { prezzario } => {
+                (prezzario, TipoLavoro::Indice, Bisogno::Niente)
+            }
+            Richiesta::AssistenteIndicizza { prezzario } => {
+                (prezzario, TipoLavoro::Indicizza, Bisogno::Embedding)
             }
             Richiesta::AssistenteCerca {
                 prezzario,
                 testo,
                 limite,
                 unita,
-            } => self.con_assistente(|a, s| {
-                a.cerca(
-                    s,
-                    &prezzario,
-                    &testo,
-                    limite.unwrap_or(LIMITE_RICERCA),
-                    unita.as_deref(),
-                )
-            }),
+            } => (
+                prezzario,
+                TipoLavoro::Cerca {
+                    testo,
+                    limite: limite.unwrap_or(LIMITE_RICERCA),
+                    unita,
+                },
+                Bisogno::Niente,
+            ),
             Richiesta::AssistenteProponi {
                 prezzario,
                 testo,
                 computo,
-            } => self.con_assistente(|a, s| a.proponi(s, &prezzario, &testo, computo.as_deref())),
-            Richiesta::AssistenteApplica {} => {
-                self.aperta()?;
-                let comandi = self.assistente()?.da_applicare()?;
-                Ok(valore(&self.aperta_mut()?.esegui(&comandi)?))
+            } => {
+                if testo.trim().is_empty() {
+                    return Err(assistente::errore(
+                        "richiesta_vuota",
+                        "la richiesta è vuota",
+                    ));
+                }
+                (
+                    prezzario,
+                    TipoLavoro::Proponi { testo, computo },
+                    Bisogno::Generazione,
+                )
             }
-            _ => Err(richiesta("richiesta non dell'assistente")),
+            _ => return Err(richiesta("richiesta non eseguibile come lavoro")),
+        };
+        let (prezzario, progetto) = {
+            let s = self.aperta()?;
+            let p = prezzario_di(s, Some(&nome))?.clone();
+            let progetto = matches!(tipo, TipoLavoro::Proponi { .. }).then(|| s.progetto().clone());
+            (p, progetto)
+        };
+        let attrezzi = self.assistente()?.attrezzi(&nome, bisogno)?;
+        Ok(Lavoro {
+            id,
+            generazione: self.generazione,
+            tipo,
+            attrezzi,
+            nome,
+            prezzario,
+            progetto,
+            annullamento: self.interruttore.nuovo(),
+        })
+    }
+
+    /// Conclude un lavoro: per le proposte, prova e anteprima sul progetto aperto, e
+    /// proposta conservata per `assistente_applica`.
+    fn concludi(&mut self, e: EsitoLavoro) -> Result<Value, ErroreApplicazione> {
+        let mut v = e.risultato?;
+        if !e.proposta_attesa {
+            return Ok(v);
+        }
+        if e.generazione != self.generazione || self.sessione.is_none() {
+            return Err(assistente::errore(
+                "progetto_cambiato",
+                "il progetto aperto è cambiato durante la proposta: ripetere la richiesta",
+            ));
+        }
+        if let Some(p) = &e.proposta {
+            let prova = match opencomputo_assistente::verifica::anteprima(self.aperta()?, p) {
+                Ok(a) => {
+                    json!({"ok": true, "esito": a.esito, "computo": a.computo, "voci": a.voci})
+                }
+                Err(err) => json!({"ok": false, "errore": errore_json(&err)}),
+            };
+            if let Value::Object(m) = &mut v {
+                m.insert("prova".into(), prova);
+            }
+        }
+        self.assistente()?.conserva_proposta(e.proposta);
+        Ok(v)
+    }
+
+    /// Gestisce una richiesta JSON fino al primo passo: le operazioni lunghe
+    /// dell'assistente tornano come [`Passo::Lavoro`], da eseguire senza tenere il
+    /// servizio (l'interfaccia grafica resta libera) e da concludere con
+    /// [`Servizio::completa`].
+    pub fn avvia(&mut self, mut v: Value) -> Passo {
+        let id = v.as_object_mut().and_then(|m| m.remove("id"));
+        let r = match serde_json::from_value::<Richiesta>(v) {
+            Ok(r) => r,
+            Err(e) => {
+                return Passo::Risposta {
+                    risposta: risposta(id, Err(richiesta(format!("richiesta non valida: {e}")))),
+                    cambiato: false,
+                };
+            }
+        };
+        if r.e_lavoro() {
+            return match self.prepara(r, id.clone()) {
+                Ok(l) => Passo::Lavoro(Box::new(l)),
+                Err(e) => Passo::Risposta {
+                    risposta: risposta(id, Err(e)),
+                    cambiato: false,
+                },
+            };
+        }
+        let modifica = r.modifica_stato();
+        let esito = self.gestisci(r);
+        let cambiato = modifica && esito.is_ok();
+        Passo::Risposta {
+            risposta: risposta(id, esito),
+            cambiato,
         }
     }
 
-    /// Esegue `f` con l'assistente e la sessione aperta.
-    fn con_assistente(
-        &mut self,
-        f: impl FnOnce(&mut Assistente, &Sessione) -> Result<Value, ErroreApplicazione>,
-    ) -> Result<Value, ErroreApplicazione> {
-        self.assistente()?;
-        let (Some(a), Some(s)) = (self.assistente.as_mut(), self.sessione.as_ref()) else {
-            return Err(richiesta(
-                "nessun progetto aperto: usare `apri`, `nuovo` o `importa`",
-            ));
-        };
-        f(a, s)
+    /// Conclude un lavoro eseguito e restituisce la risposta (i lavori non cambiano il
+    /// progetto).
+    pub fn completa(&mut self, e: EsitoLavoro) -> (Value, bool) {
+        let id = e.id.clone();
+        (risposta(id, self.concludi(e)), false)
     }
 
     /// Sessione aperta.
@@ -509,6 +658,7 @@ impl Servizio {
         }
         self.gzip = percorso.as_deref().is_some_and(compresso);
         self.sessione = Some(s.con_politica(self.politica.clone()));
+        self.generazione = self.generazione.wrapping_add(1);
         if let Some(a) = self.assistente.as_mut() {
             a.dimentica_proposta();
         }
@@ -711,6 +861,7 @@ impl Servizio {
                 }
                 let chiuso = self.sessione.take().is_some();
                 self.percorso = None;
+                self.generazione = self.generazione.wrapping_add(1);
                 if let Some(a) = self.assistente.as_mut() {
                     a.dimentica_proposta();
                 }
@@ -723,7 +874,9 @@ impl Servizio {
             | Richiesta::AssistenteIndicizza { .. }
             | Richiesta::AssistenteCerca { .. }
             | Richiesta::AssistenteProponi { .. }
-            | Richiesta::AssistenteApplica {}) => self.gestisci_assistente(r),
+            | Richiesta::AssistenteApplica {}
+            | Richiesta::AssistenteIndice { .. }
+            | Richiesta::AssistenteAnnulla {}) => self.gestisci_assistente(r),
         }
     }
 
@@ -770,21 +923,14 @@ impl Servizio {
     /// Gestisce una richiesta già decodificata come JSON. Restituisce la risposta e
     /// `true` se la richiesta è riuscita e può aver cambiato lo stato
     /// ([`Richiesta::modifica_stato`]).
-    pub fn rispondi_valore(&mut self, mut v: Value) -> (Value, bool) {
-        let id = v.as_object_mut().and_then(|m| m.remove("id"));
-        let r = match serde_json::from_value::<Richiesta>(v) {
-            Ok(r) => r,
-            Err(e) => {
-                return (
-                    risposta(id, Err(richiesta(format!("richiesta non valida: {e}")))),
-                    false,
-                );
+    pub fn rispondi_valore(&mut self, v: Value) -> (Value, bool) {
+        match self.avvia(v) {
+            Passo::Risposta { risposta, cambiato } => (risposta, cambiato),
+            Passo::Lavoro(l) => {
+                let e = l.esegui(self.avanzamento.as_deref().map(|f| f as &dyn Fn(&Value)));
+                self.completa(e)
             }
-        };
-        let modifica = r.modifica_stato();
-        let esito = self.gestisci(r);
-        let cambiato = modifica && esito.is_ok();
-        (risposta(id, esito), cambiato)
+        }
     }
 
     /// Ciclo del servizio: una richiesta per riga, fino alla fine dell'ingresso.

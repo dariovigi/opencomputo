@@ -71,6 +71,9 @@ radice; compare solo nel grafo delle piattaforme che non hanno certificati di si
 non viene compilato su Linux, macOS e Windows). `cargo deny check`: pulito.
 
 `opencomputo-assistente` aggiunge `sha2` (impronte dei testi indicizzati), già presente.
+Con la fase 4 anche `opencomputo-gui` include `opencomputo-rete` (attraverso
+`opencomputo-agent-api`); l'interfaccia dell'assistente non aggiunge dipendenze né
+JavaScript esterno.
 
 Dipendenze dirette aggiuntive di `opencomputo-agent-api`:
 

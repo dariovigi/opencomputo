@@ -44,12 +44,19 @@ function server() {
   return new Promise((ok) => s.listen(0, '127.0.0.1', () => ok(s)));
 }
 
-/** Processo `opencomputo servizio` con richieste in fila (una risposta per riga). */
-function motore() {
-  const p = spawn(MOTORE, ['servizio'], { stdio: ['pipe', 'pipe', 'inherit'] });
+/**
+ * Processo `opencomputo servizio` con richieste in fila (una risposta per riga). Le righe
+ * di avanzamento dell'assistente (`{"avanzamento": …}`, senza `ok`) vanno a `suAvanzamento`.
+ * La cartella di configurazione è sempre temporanea: i test non toccano quella dell'utente.
+ */
+function motore({ ambiente = {}, suAvanzamento = () => {} } = {}) {
+  const p = spawn(MOTORE, ['servizio', '--avanzamento'], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, ...ambiente } });
   const righe = createInterface({ input: p.stdout });
   const attese = [];
-  righe.on('line', (l) => attese.shift()?.(l));
+  righe.on('line', (l) => {
+    if (l.startsWith('{"avanzamento"')) { suAvanzamento(JSON.parse(l)); return; }
+    attese.shift()?.(l);
+  });
   let coda = Promise.resolve();
   const invia = (json) => {
     const r = coda.then(() => new Promise((ok) => { attese.push(ok); p.stdin.write(json.replace(/\n/g, ' ') + '\n'); }));
@@ -91,9 +98,22 @@ const SIMULAZIONE = () => {
 };
 
 /** Apre il banco: {pagina, cartella (temporanea), errori (console e pagina), chiudi()}. */
-export async function apriBanco({ larghezza = 1600, altezza = 900 } = {}) {
+export async function apriBanco({ larghezza = 1600, altezza = 900, provider = null } = {}) {
   const s = await server();
-  const m = motore();
+  const config = await mkdtemp(path.join(tmpdir(), 'opencomputo-config-'));
+  const ambiente = { OPENCOMPUTO_CONFIG: config };
+  if (provider) ambiente.OPENCOMPUTO_PROVIDER_DI_PROVA = provider;
+  let avanzamento = () => {};
+  const m = motore({ ambiente, suAvanzamento: (v) => avanzamento(v) });
+  if (provider) {
+    // Senza la feature `banco-di-prova` il motore userebbe il portachiavi vero e la rete.
+    const st = JSON.parse(await m.invia('{"richiesta":"assistente_stato"}'));
+    if (!st.ok || !st.risultato.chiavi.archivio.startsWith('memoria')) {
+      m.chiudi();
+      s.close();
+      throw new Error('il motore non è compilato per il banco di prova: cargo build -p opencomputo-agent-api --features banco-di-prova');
+    }
+  }
   const browser = await chromium.launch({ executablePath: CHROMIUM || undefined, args: ['--lang=it-IT'] });
   const contesto = await browser.newContext({ viewport: { width: larghezza, height: altezza }, locale: 'it-IT' });
   const errori = [];
@@ -103,7 +123,7 @@ export async function apriBanco({ larghezza = 1600, altezza = 900 } = {}) {
   });
   // Come il lato Rust: dopo una richiesta riuscita che modifica il progetto, evento
   // `progetto-aggiornato` a tutte le finestre, con l'etichetta di quella d'origine.
-  const MODIFICANO = new Set(['apri', 'nuovo', 'importa', 'salva', 'esegui', 'annulla', 'ripristina', 'carica_prezzario', 'chiudi']);
+  const MODIFICANO = new Set(['apri', 'nuovo', 'importa', 'salva', 'esegui', 'annulla', 'ripristina', 'carica_prezzario', 'chiudi', 'assistente_applica']);
   await contesto.exposeFunction('__ocInvia', async (json, origine) => {
     const risposta = await m.invia(json);
     const r = JSON.parse(risposta);
@@ -119,6 +139,10 @@ export async function apriBanco({ larghezza = 1600, altezza = 900 } = {}) {
     else if (azione === 'fine') trascinamento = null;
     return JSON.stringify(trascinamento);
   });
+  // Come il lato Rust: avanzamento delle operazioni lunghe dell'assistente.
+  avanzamento = (v) => {
+    for (const p of contesto.pages()) p.evaluate((d) => window.__ocEvento?.('assistente-avanzamento', d), v).catch(() => {});
+  };
   await contesto.addInitScript(SIMULAZIONE);
   const pagina = await contesto.newPage();
   const cartella = await mkdtemp(path.join(tmpdir(), 'opencomputo-gui-'));
@@ -127,6 +151,7 @@ export async function apriBanco({ larghezza = 1600, altezza = 900 } = {}) {
   return {
     pagina,
     cartella,
+    config,
     errori,
     indirizzo,
     contesto,

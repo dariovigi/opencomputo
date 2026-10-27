@@ -9,7 +9,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
 cargo deny check                      # licenze, vulnerabilità, sorgenti
-cargo build -p opencomputo-agent-api
+cargo build -p opencomputo-agent-api --features banco-di-prova
 (cd crates/opencomputo-gui/ui-tests && npm ci && npm test)
 ```
 

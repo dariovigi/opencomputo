@@ -81,7 +81,7 @@ Pacchetti installabili (`.dmg`, `.msi`, `.deb`…): `cargo tauri build` nella ca
 Test end-to-end dell'interfaccia (Node 18 o successivo, Chromium):
 
 ```sh
-cargo build -p opencomputo-agent-api
+cargo build -p opencomputo-agent-api --features banco-di-prova
 cd crates/opencomputo-gui/ui-tests && npm install && npm test
 ```
 
@@ -89,7 +89,7 @@ cd crates/opencomputo-gui/ui-tests && npm install && npm test
 
 Ogni comando risponde con un oggetto JSON (`{"ok": true, "risultato": …}` oppure
 `{"ok": false, "errore": …}`) e un codice di uscita (0 eseguito, 1 rifiutato, 2
-argomenti errati, 3 errore di file o di formato).
+argomenti errati, 3 errore di file o di formato, 4 errore dell'assistente AI).
 
 ```sh
 opencomputo nuovo lavori.ocp --titolo "Nuova scuola"

@@ -615,3 +615,46 @@ table.crono-legami, table.crono-mesi { border-collapse: collapse; width: 100%; f
 .crono-schede { display: flex; align-items: center; gap: 6px; padding: 4px 16px; background: var(--pannello-2); border-bottom: 1px solid var(--bordo); }
 .crono-schede .schede-tab button { padding: 3px 10px; font-size: 12.5px; }
 .crono-calendario fieldset > .pulsante { align-self: flex-start; }
+
+/* ------------------------------------------------------------------ assistente AI */
+
+.assistente { max-width: 1100px; }
+.assistente .scheda { max-width: none; }
+.ai-fuori { max-width: 1100px; font-size: 12.5px; justify-content: space-between; }
+.ai-scelte { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-bottom: 10px; }
+.ai-scelte .campo-riga { margin-top: 0; }
+.ai-scelte select { width: auto; max-width: 340px; }
+.ai-azioni { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.ai-attesa { color: var(--testo-2); font-size: 12.5px; }
+.ai-attesa::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; border: 2px solid var(--accento); border-right-color: transparent; animation: ai-gira 0.9s linear infinite; vertical-align: -1px; }
+@keyframes ai-gira { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ai-attesa::before { animation: none; } }
+.ai-totali { display: flex; gap: 18px; flex-wrap: wrap; padding: 8px 10px; margin-bottom: 12px; border-radius: 6px; background: var(--accento-chiaro); font-variant-numeric: tabular-nums; }
+.ai-voci { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 12px; }
+.ai-voci th { text-align: left; font-weight: 600; color: var(--testo-2); padding: 4px 6px; border-bottom: 1px solid var(--bordo-forte); }
+.ai-voci th.num, .ai-voci td.num { text-align: right; white-space: nowrap; }
+.ai-voci td { padding: 6px 6px 2px; vertical-align: top; }
+.ai-voce td { border-top: 1px solid var(--bordo); }
+.ai-dettaglio td { padding: 0 6px 8px 22px; color: var(--testo-2); }
+.ai-righe { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.ai-forma { font-size: 11px; padding: 0 5px; border-radius: 3px; background: var(--voce); color: var(--testo-2); }
+.ai-parametro { display: inline-block; margin-right: 8px; font-variant-numeric: tabular-nums; }
+.ai-parametro.ipotesi { color: var(--avviso); font-weight: 600; }
+.ai-motivazione { font-size: 12px; color: var(--testo-3); margin-top: 2px; }
+.ai-elenco h3 { font-size: 13px; margin: 14px 0 4px; color: var(--testo-2); }
+.scheda p.nota.ai-consumi { margin: 10px 0 0; }
+.ai-indici { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ai-indici th { text-align: left; color: var(--testo-2); font-weight: 600; padding: 4px 8px; border-bottom: 1px solid var(--bordo-forte); }
+.ai-indici td { padding: 6px 8px; border-bottom: 1px solid var(--bordo); }
+.ai-indici .num { text-align: right; font-variant-numeric: tabular-nums; }
+.ai-progresso { display: inline-flex; align-items: center; gap: 8px; }
+.ai-progresso progress { width: 160px; }
+.ai-progresso-testo { font-size: 12px; color: var(--testo-2); font-variant-numeric: tabular-nums; }
+.ai-testo-consenso { font-size: 13px; line-height: 1.5; margin-bottom: 12px; }
+.ai-testo-consenso p, .ai-testo-consenso ul { margin: 0 0 8px; }
+.ai-testo-consenso ul { padding-left: 20px; }
+.ai-consenso .campo.spunta { font-size: 13px; color: var(--testo); }
+.ai-chiave { display: grid; grid-template-columns: minmax(240px, 300px) minmax(200px, 1fr) 64px 76px; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--bordo); }
+.ai-chiave input[type=password] { border: 1px solid var(--bordo-forte); border-radius: 4px; background: var(--pannello); padding: 4px 7px; min-height: 28px; width: 100%; }
+.ai-chiave small { color: var(--testo-3); }
+.assistente .mono { font-family: var(--mono); font-size: 12px; }

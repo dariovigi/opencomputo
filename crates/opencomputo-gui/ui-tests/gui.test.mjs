@@ -1,5 +1,6 @@
 // Test end-to-end dell'interfaccia: Chromium + motore reale (`opencomputo servizio`).
-// Eseguire dopo `cargo build -p opencomputo-agent-api`: `npm test` in questa cartella.
+// Eseguire dopo `cargo build -p opencomputo-agent-api --features banco-di-prova`: `npm test`
+// in questa cartella.
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';

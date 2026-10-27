@@ -45,7 +45,9 @@ il modello e non calcola quantità né importi (ADR 0025). I client dei provider
 modulo `provider`, separato dalla validazione, e spediscono le richieste attraverso il
 tratto `Trasporto`: l'unica implementazione con la rete è in `opencomputo-rete`, insieme
 al portachiavi del sistema. Il servizio JSON (`agent-api`, modulo `assistente`) collega i
-pezzi: configurazione, consenso, cache dei vettori.
+pezzi: configurazione, consenso, cache dei vettori. Le operazioni lunghe sono `Lavoro`:
+preparate con il servizio, eseguite senza (la GUI le esegue con `spawn_blocking`, così le
+altre finestre restano libere), concluse con il servizio.
 
 La GUI usa lo stesso servizio JSON della CLI e degli agenti (ADR 0009): non esiste una
 via di modifica riservata all'interfaccia grafica.
@@ -128,7 +130,7 @@ Dipende solo da `opencomputo-core`; nessuna dipendenza esterna nuova.
 | `forme` | catalogo chiuso delle forme di rigo e traduzione in righi di misura del core |
 | `risposta`, `schema` | risposte del modello e schemi JSON per il tool use con `strict: true` |
 | `proposta` | validazione della risposta, proposta tracciata, comandi |
-| `verifica` | prova dei comandi nella `Sessione` |
+| `verifica` | prova dei comandi nella `Sessione` e anteprima delle voci su una copia del progetto |
 | `provider` | tratti `Trasporto`, `Attesa`, `Embedding`, `Generazione`; `Segreto`; errori tipizzati |
 | `provider::openai`, `provider::anthropic` | client degli embedding e della generazione con output strutturato |
 | `provider::riprova` | classificazione degli errori HTTP e nuovi tentativi con `retry-after` |

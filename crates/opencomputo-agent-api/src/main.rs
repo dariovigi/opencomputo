@@ -18,7 +18,8 @@ use serde_json::Value;
 ///
 /// Ogni comando stampa su stdout un oggetto JSON {"ok": true, "risultato": …} oppure
 /// {"ok": false, "errore": …}. Codici di uscita: 0 eseguito, 1 rifiutato o progetto
-/// non valido, 2 argomenti errati, 3 errore di file o di formato.
+/// non valido, 2 argomenti errati, 3 errore di file o di formato, 4 errore dell'assistente
+/// AI.
 #[derive(Debug, Parser)]
 #[command(name = "opencomputo", version)]
 struct Cli {
@@ -194,6 +195,11 @@ enum Sotto {
         /// Accetta comandi che introducono errori di validazione.
         #[arg(long)]
         permissivo: bool,
+        /// Scrive su stdout anche righe di avanzamento delle operazioni lunghe
+        /// dell'assistente (oggetti con il campo `avanzamento`, senza `ok`), prima della
+        /// risposta.
+        #[arg(long)]
+        avanzamento: bool,
     },
 }
 
@@ -795,8 +801,19 @@ fn main() -> ExitCode {
             });
         }
     };
-    if let Sotto::Servizio { file, permissivo } = cli.comando {
+    if let Sotto::Servizio {
+        file,
+        permissivo,
+        avanzamento,
+    } = cli.comando
+    {
         let mut s = Servizio::new().con_politica(politica(permissivo));
+        if avanzamento {
+            s = s.con_avanzamento(Box::new(|v: &Value| {
+                let mut uscita = io::stdout().lock();
+                let _ = writeln!(uscita, "{v}").and_then(|()| uscita.flush());
+            }));
+        }
         if let Some(percorso) = file {
             let r = s.gestisci(Richiesta::Apri { percorso });
             let fallito = r.is_err();

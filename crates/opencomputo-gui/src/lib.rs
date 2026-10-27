@@ -20,13 +20,19 @@
 //! Dopo ogni richiesta che cambia il progetto viene emesso l'evento
 //! [`EVENTO_AGGIORNATO`], così le altre finestre si aggiornano.
 //!
+//! Le operazioni lunghe dell'assistente AI (indicizzazione, ricerca, proposta) sono
+//! eseguite in un thread a parte **senza tenere il servizio**: le finestre possono fare
+//! altre richieste nel frattempo, e `assistente_annulla` ferma l'operazione in corso.
+//! L'avanzamento arriva alla finestra che l'ha chiesta con l'evento
+//! [`EVENTO_AVANZAMENTO`].
+//!
 //! [ADR 0009]: ../../docs/adr/0009-gui-tauri.md
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
-use opencomputo_agent_api::servizio::Servizio;
+use opencomputo_agent_api::servizio::{Passo, Servizio};
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WindowEvent};
 
@@ -35,6 +41,9 @@ pub const FINESTRA_PRINCIPALE: &str = "principale";
 /// Evento emesso dopo ogni richiesta che cambia il progetto; il dato è
 /// `{"origine": etichetta della finestra che l'ha inviata}`.
 pub const EVENTO_AGGIORNATO: &str = "progetto-aggiornato";
+/// Evento emesso alla finestra che ha chiesto un'operazione lunga dell'assistente, con
+/// l'oggetto di avanzamento del servizio (`{"avanzamento": …}`).
+pub const EVENTO_AVANZAMENTO: &str = "assistente-avanzamento";
 /// Evento emesso alla finestra principale quando si tenta di chiuderla con modifiche
 /// non salvate: l'interfaccia chiede conferma e poi invoca `esci`.
 pub const EVENTO_CHIUSURA: &str = "chiusura-richiesta";
@@ -141,7 +150,24 @@ async fn richiesta(
     stato: State<'_, Stato>,
     richiesta: Value,
 ) -> Result<Value, String> {
-    let (risposta, cambiato) = stato.gestisci(richiesta);
+    let passo = stato.servizio().avvia(richiesta);
+    let (risposta, cambiato) = match passo {
+        Passo::Risposta { risposta, cambiato } => (risposta, cambiato),
+        Passo::Lavoro(lavoro) => {
+            // Il servizio non è tenuto durante il lavoro: solo per prepararlo e concluderlo.
+            let etichetta = finestra.label().to_owned();
+            let app_lavoro = app.clone();
+            let esito = tauri::async_runtime::spawn_blocking(move || {
+                let avanzamento = |v: &Value| {
+                    let _ = app_lavoro.emit_to(etichetta.as_str(), EVENTO_AVANZAMENTO, v);
+                };
+                lavoro.esegui(Some(&avanzamento))
+            })
+            .await
+            .map_err(|e| e.to_string())?;
+            stato.servizio().completa(esito)
+        }
+    };
     if cambiato {
         let _ = app.emit(EVENTO_AGGIORNATO, json!({"origine": finestra.label()}));
     }

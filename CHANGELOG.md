@@ -29,6 +29,13 @@ Prima versione: tutte le fasi di sviluppo 1–6. Dettagli in `docs/STATO.md`.
 
 ### Aggiunto
 
+* **Assistente AI nell'interfaccia** (ADR 0025, fase 4): vista «Assistente AI» con
+  consenso, chiavi, modelli, indice dei prezzari con avanzamento e annullamento, e
+  proposta con anteprima delle voci (quantità, prezzi e importi calcolati dal motore),
+  ipotesi evidenziate, domande, alternative ed esclusioni; «Applica al computo» come
+  passo annullabile. Le operazioni lunghe non bloccano le altre finestre. Richieste
+  `assistente_indice` e `assistente_annulla`; `opencomputo servizio --avanzamento`.
+  La finestra *Carica prezzario…* accetta anche i listini CSV.
 * **Assistente AI, provider** (ADR 0025, fase 3; riga di comando e servizio JSON,
   l'interfaccia grafica arriverà dopo):
   * embedding OpenAI (`text-embedding-3-small` predefinito, modello e dimensioni

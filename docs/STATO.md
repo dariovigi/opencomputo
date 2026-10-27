@@ -1,8 +1,9 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-10-27. Ultimo lavoro, sul ramo `assistente`: la **fase 3
-dell'assistente AI** (provider OpenAI e Anthropic, portachiavi, consenso, ricerca
-ibrida, servizio JSON e riga di comando; ADR 0025), dopo la fase 2 (listini CSV e JSON,
+Ultimo aggiornamento: 2026-10-27. Ultimo lavoro, sul ramo `assistente`: la **fase 4
+dell'assistente AI** (vista «Assistente AI» nell'interfaccia; ADR 0025), dopo la fase 3
+(provider OpenAI e Anthropic, portachiavi, consenso, ricerca ibrida, servizio JSON e riga
+di comando) e la fase 2 (listini CSV e JSON,
 ricerca nei prezzari, validazione delle risposte del modello e traduzione in comandi),
 dopo il
 **cronoprogramma dei lavori** con editor in stile project management e diagramma di
@@ -24,6 +25,77 @@ Restano aperti:
 * il trascinamento tra finestre sui sistemi reali (WebView2, WKWebView, WebKitGTK);
 * il confronto con documenti PriMus reali (serve un export XPWE con voci);
 * la prova su macOS e Windows.
+
+## Assistente AI, fase 4: interfaccia
+
+Approvata dal titolare il 2026-10-27 («Approvo, passa alla Fase 4»). Decisioni 23–28
+dell'[ADR 0025](adr/0025-assistente-ai.md).
+
+### Cosa è cambiato
+
+* **Interfaccia** (`ui/js/viste/assistente.js`, voce «Assistente AI» nella barra
+  laterale), tre schede:
+  * *Proposta*: consenso da accettare prima di tutto; prezzario (con «Carica
+    prezzario…»), computo, richiesta, «Proponi» con attesa e «Annulla»; risultato con
+    esito, voci con quantità, prezzo e importo calcolati dal motore, righi con forma e
+    parametri (ipotesi evidenziate), alternative, escluse, ipotesi, informazioni
+    mancanti, avvisi, totale prima e dopo, token; «Applica al computo» (un passo
+    annullabile) e «Scarta»; per le domande bloccanti, «Aggiungi le domande alla
+    richiesta»;
+  * *Prezzari e indice*: voci indicizzate e tipo di ricerca per prezzario;
+    indicizzazione con conferma esplicita dell'invio, barra di avanzamento e annullamento;
+  * *Impostazioni*: consenso (data, revoca), chiavi (campi password, mai rimostrate),
+    modelli con l'elenco di quelli noti, modalità dell'output, dimensioni, limiti di token.
+  * avviso sempre visibile che i dati escono dal computer.
+* **Listini CSV** nella finestra *Carica prezzario…* (elenco prezzi, aggiornamento da
+  listino, assistente): un solo filtro comune.
+* **agent-api**:
+  * operazioni lunghe come `Lavoro` (`Servizio::avvia`, `Lavoro::esegui`,
+    `Servizio::completa`), indici con un lucchetto per prezzario, `Interruttore` per
+    annullare, generazione del progetto per scartare le proposte di un progetto
+    chiuso;
+  * richieste `assistente_indice` (stato dell'indice, senza chiamate) e
+    `assistente_annulla`; `assistente_stato` riporta anche i modelli noti;
+  * la proposta riporta `prova.voci` (anteprima del core) e `prova.computo`;
+  * controllo delle dimensioni per i modelli di embedding che non le accettano;
+  * `opencomputo servizio --avanzamento`;
+  * feature di sviluppo `banco-di-prova` (provider locale finto, chiavi in memoria).
+* **assistente**: `verifica::anteprima` (esecuzione su una copia del progetto, valori
+  dalla vista del computo).
+* **GUI (Rust)**: il comando `richiesta` esegue i lavori con `spawn_blocking` senza
+  tenere il servizio ed emette `assistente-avanzamento` alla finestra che li ha chiesti.
+* **Test dell'interfaccia**: provider finto (`ui-tests/provider-finto.mjs`), cartella di
+  configurazione sempre temporanea, righe di avanzamento del motore inoltrate come
+  eventi; `npm test` richiede `cargo build -p opencomputo-agent-api --features
+  banco-di-prova` (README, RILASCIO, CI e CLAUDE.md aggiornati).
+
+### Verifica (Rust 1.97.0, Linux, Chromium 1243)
+
+* `cargo test --workspace` (ora compreso il crate grafico, dopo aver installato qui
+  WebKitGTK): 391 passati, 0 falliti, 9 ignorati. Nuovi test Rust: 4 del servizio
+  (lavoro eseguito in un altro thread mentre il servizio risponde, con anteprima 12,00
+  m² × 7,20 € = 86,40 €; progetto cambiato durante la proposta; annullamento
+  dall'interruttore prima di ogni chiamata; stato dell'indice e modelli).
+* `cargo clippy --workspace --all-targets` con e senza `--all-features`, `-D warnings`:
+  pulito, crate grafico compreso. `cargo fmt --check`, `cargo deny check`: puliti.
+* `npm test`: 40 scenari passati (30 esistenti + 10 dell'assistente): consenso prima di
+  qualsiasi chiamata; chiavi salvate e mai presenti nella pagina, nella memoria del
+  browser o nei file; listino CSV caricato dalla finestra; proposta con anteprima,
+  nessun prezzo né codice nei messaggi, applicazione e annullamento dalla barra;
+  ipotesi evidenziate (16 m × 2,70 m ipotizzati = 43,20 m², 311,04 €); domande bloccanti;
+  chiave rifiutata con collegamento alle impostazioni; indicizzazione con conferma,
+  avanzamento e ricerca ibrida; modalità rifiutata per Sonnet 5.5 e strumento forzato
+  davvero usato con Haiku 5.5; revoca del consenso; nessun errore JavaScript né
+  violazione della CSP. Il banco rifiuta di partire con un motore senza la feature.
+* **Non verificato**: l'applicazione Tauri vera (finestre, `spawn_blocking`, eventi,
+  annullamento a metà di una chiamata) è compilata ma non avviata qui: i test usano il
+  banco con il motore a righe, che esegue un lavoro per volta (l'annullamento a metà è
+  provato solo nei test Rust); chiamate reali ai provider; macOS e Windows.
+
+### Aperti
+
+* Prova sul Mac con le chiavi vere: indicizzazione di un prezzario reale e qualche
+  richiesta tipica dalla nuova vista.
 
 ## Assistente AI, fase 3: provider, portachiavi, consenso
 

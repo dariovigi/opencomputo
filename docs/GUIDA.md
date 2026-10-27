@@ -154,8 +154,8 @@ responsabilità di chi li importa.
 ### Listini CSV e JSON
 
 Un prezzario si può caricare anche da un listino **CSV** o **JSON**, per esempio
-esportato da un foglio di calcolo. Dalla finestra *Carica prezzario…* si possono scegliere
-per ora i file JSON; i CSV si caricano dalla riga di comando:
+esportato da un foglio di calcolo, dalla finestra *Carica prezzario…* o dalla riga di
+comando:
 
 ```sh
 opencomputo cerca progetto.ocp "massetto" --prezzario listino.csv
@@ -703,12 +703,12 @@ rigo senza valori, un prezzo cambiato in elenco). Un clic porta alla voce intere
 OpenComputo rifiuta in ogni caso le modifiche che introdurrebbero un errore e ne mostra
 il motivo, lasciando il progetto com'era.
 
-## Assistente AI (da riga di comando)
+## Assistente AI
 
 L'assistente propone voci di computo a partire da una descrizione in linguaggio naturale
 («tinteggiatura di due pareti di 4 x 3 m»), scegliendo solo voci del prezzario caricato.
-Per ora si usa dalla riga di comando e dal servizio JSON; l'interfaccia grafica arriverà
-in seguito.
+Si usa dalla sezione **Assistente AI** della barra laterale, dalla riga di comando e dal
+servizio JSON.
 
 **I dati inviati escono dal computer.** L'assistente usa due servizi esterni:
 
@@ -724,7 +724,48 @@ OpenComputo, con le stesse regole e gli stessi controlli di sempre. Se il prezza
 viene da un DCF distribuito da ACCA, le sue condizioni d'uso ne vietano l'uso con altri
 software: verificare di avere il diritto di inviarne il contenuto.
 
-### Consenso
+### Nell'applicazione
+
+La vista **Assistente AI** ha tre schede.
+
+* **Proposta**. Al primo uso mostra il testo del consenso: va letto e accettato
+  (casella «Ho letto…», poi **Accetto**); senza consenso l'assistente non chiama nessun
+  servizio. Poi si sceglie il prezzario (o lo si carica con **Carica prezzario…**:
+  DCF non protetto, XPWE, listino CSV o JSON) e il computo di destinazione, si scrive la
+  richiesta e si preme **Proponi** (o Ctrl+Invio). Durante l'attesa si può continuare a
+  lavorare nelle altre viste e finestre, oppure premere **Annulla**.
+* **Prezzari e indice**: per ogni prezzario caricato il numero di voci indicizzate e il
+  tipo di ricerca (per parole, o ibrida per parole e significato). **Indicizza** chiede
+  conferma, dicendo quante voci verranno inviate a OpenAI, e mostra l'avanzamento; si
+  può annullare e riprendere in seguito.
+* **Impostazioni**: consenso (con la data e la possibilità di revocarlo), chiavi API di
+  OpenAI e Anthropic (si incollano nel campo e si salvano nel portachiavi del sistema;
+  dopo il salvataggio non sono più visibili), modelli e limiti di token.
+
+La proposta mostra:
+
+* l'esito: **Completa**, **Da rivedere** (ipotesi, esclusioni, avvisi o informazioni
+  mancanti) o **Nessuna voce proposta**;
+* per ogni lavorazione la voce scelta con quantità, prezzo e importo **calcolati da
+  OpenComputo** come se la voce fosse già nel computo, i righi con la forma e i
+  parametri (quelli in arancione sono **ipotesi**: il valore non era nella richiesta; il
+  suggerimento dice quale ipotesi), e il motivo della scelta;
+* il totale del computo prima e dopo, le alternative non scelte, le lavorazioni escluse
+  con il motivo, le ipotesi con il loro impatto, le informazioni mancanti e gli avvisi;
+* i token consumati.
+
+Il progetto non cambia finché non si preme **Applica al computo**: le voci vengono
+aggiunte in un solo passo, con nelle note la lavorazione, la motivazione e le ipotesi, e
+si annullano come ogni altra modifica. **Scarta** dimentica la proposta. Se mancano dati
+indispensabili, l'assistente fa le domande invece di proporre: **Aggiungi le domande alla
+richiesta** le copia nel testo, da completare con le risposte prima di riprovare.
+
+Gli errori dei servizi (chiave rifiutata, credito esaurito, rete) compaiono come
+notifiche, con il collegamento alle impostazioni quando serve.
+
+### Dalla riga di comando
+
+#### Consenso
 
 Senza consenso l'assistente non chiama nessun servizio; la ricerca testuale resta
 disponibile. Per leggere il testo e accettarlo:
@@ -737,7 +778,7 @@ opencomputo assistente consenso --revoca
 
 Se il testo cambia, cambia la versione e va accettato di nuovo.
 
-### Chiavi
+#### Chiavi
 
 Servono una chiave API di OpenAI e una di Anthropic. Si salvano nel portachiavi del
 sistema (Portachiavi di macOS, Gestione credenziali di Windows; su Linux il keyring del
@@ -751,7 +792,7 @@ opencomputo assistente chiave openai --elimina
 opencomputo assistente stato               # quali chiavi ci sono (mai il loro valore)
 ```
 
-### Modelli e configurazione
+#### Modelli e configurazione
 
 Predefiniti: `text-embedding-3-small` per gli embedding e `claude-sonnet-5-5` per la
 generazione, con risposte in JSON vincolate a uno schema. Si possono cambiare:
@@ -771,7 +812,7 @@ La configurazione sta in `assistente.json`, nella cartella `~/Library/Applicatio
 Support/OpenComputo` (macOS), `%APPDATA%\OpenComputo` (Windows) o
 `~/.config/opencomputo` (Linux); la variabile `OPENCOMPUTO_CONFIG` ne indica un'altra.
 
-### Indicizzare un prezzario
+#### Indicizzare un prezzario
 
 Per la ricerca per significato le voci del prezzario vanno indicizzate una volta:
 
@@ -792,7 +833,7 @@ opencomputo assistente cerca prezzario-regionale.dcf "tinteggiatura pareti inter
 La ricerca è «ibrida» (parole e significato) se il prezzario è indicizzato con il modello
 configurato, altrimenti solo per parole, senza rete.
 
-### Proporre il computo
+#### Proporre il computo
 
 ```sh
 opencomputo assistente proponi lavori.ocp --prezzario prezzario-regionale.dcf \
@@ -833,6 +874,5 @@ controlli: `opencomputo schema-comandi` elenca i comandi disponibili. Vedi il RE
   per volta in ogni finestra principale: per lavorare su due progetti si avvia
   l'applicazione due volte.
 * L'applicazione è stata provata su Linux; macOS e Windows sono da provare.
-* Assistente AI: non ancora nell'interfaccia grafica; le chiamate reali a OpenAI e
-  Anthropic e i portachiavi di macOS e Windows non sono ancora stati provati; su Linux le
-  chiavi si perdono al riavvio.
+* Assistente AI: le chiamate reali a OpenAI e Anthropic e i portachiavi di macOS e
+  Windows non sono ancora stati provati; su Linux le chiavi si perdono al riavvio.
