@@ -23,6 +23,7 @@
 //! assert_eq!(r["risultato"]["totali"][0]["dopo"], "10.00");
 //! ```
 
+pub mod assistente;
 pub mod riepilogo;
 pub mod schema;
 pub mod servizio;
@@ -40,6 +41,9 @@ pub mod uscita {
     pub const USO: u8 = 2;
     /// Errore di file o di formato (lettura, scrittura, importazione, esportazione).
     pub const FILE: u8 = 3;
+    /// Errore dell'assistente AI: consenso mancante, chiave assente o rifiutata, errore
+    /// di un provider o della rete, risposta del modello inutilizzabile.
+    pub const ASSISTENTE: u8 = 4;
 
     /// Codice di uscita per un errore.
     #[must_use]
@@ -48,6 +52,7 @@ pub mod uscita {
             ErroreApplicazione::File { .. }
             | ErroreApplicazione::Importazione { .. }
             | ErroreApplicazione::Esportazione { .. } => FILE,
+            ErroreApplicazione::Assistente { .. } => ASSISTENTE,
             _ => RIFIUTATA,
         }
     }

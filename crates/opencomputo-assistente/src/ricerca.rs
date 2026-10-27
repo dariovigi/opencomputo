@@ -17,7 +17,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use opencomputo_core::id::CapitoloId;
-use opencomputo_core::prezzario::{NaturaVoce, Prezzario};
+use opencomputo_core::prezzario::{CapitoloPrezzario, NaturaVoce, Prezzario, VocePrezzario};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, MathematicalOps};
 use serde::{Deserialize, Serialize};
@@ -81,20 +81,29 @@ struct Termine {
 #[derive(Debug, Clone)]
 pub struct IndiceTestuale {
     documenti: Vec<Documento>,
+    per_codice: BTreeMap<String, u32>,
     vocabolario: BTreeMap<String, Termine>,
     per_trigramma: BTreeMap<String, Vec<String>>,
     lunghezza_totale: u64,
 }
 
+/// Capitoli del prezzario per identificativo.
+pub(crate) type MappaCapitoli<'a> = BTreeMap<CapitoloId, &'a CapitoloPrezzario>;
+
+/// Mappa dei capitoli, per non scorrere l'elenco a ogni voce.
+pub(crate) fn mappa_capitoli(p: &Prezzario) -> MappaCapitoli<'_> {
+    p.capitoli.iter().map(|c| (c.id, c)).collect()
+}
+
 /// Catena dei capitoli (dal capitolo della voce verso la radice): codici e descrizioni.
-fn catena(p: &Prezzario, capitolo: Option<CapitoloId>) -> Vec<(String, String)> {
+fn catena(capitoli: &MappaCapitoli<'_>, capitolo: Option<CapitoloId>) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut corrente = capitolo;
     while let Some(id) = corrente {
         if out.len() >= PROFONDITA_CAPITOLI {
             break;
         }
-        match p.capitoli.iter().find(|c| c.id == id) {
+        match capitoli.get(&id) {
             Some(c) => {
                 out.push((c.codice.clone(), c.descrizione.clone()));
                 corrente = c.padre;
@@ -109,20 +118,28 @@ fn catena(p: &Prezzario, capitolo: Option<CapitoloId>) -> Vec<(String, String)> 
 /// capitoli antenati.
 #[must_use]
 pub fn testo_voce(p: &Prezzario, codice: &str) -> Option<String> {
-    let (proprio, capitoli) = testi_voce(p, codice)?;
-    Some(format!("{proprio} {capitoli}"))
+    let v = p.voce_per_codice(codice)?;
+    Some(testo_di(&mappa_capitoli(p), v))
+}
+
+/// Testo indicizzato di una voce, con la mappa dei capitoli già pronta.
+pub(crate) fn testo_di(capitoli: &MappaCapitoli<'_>, v: &VocePrezzario) -> String {
+    let (proprio, capitoli) = testi_di(capitoli, v);
+    format!("{proprio} {capitoli}")
 }
 
 /// Testo proprio della voce e testo dei capitoli, separati.
-fn testi_voce(p: &Prezzario, codice: &str) -> Option<(String, String)> {
-    let v = p.voce_per_codice(codice)?;
+fn testi_di(capitoli: &MappaCapitoli<'_>, v: &VocePrezzario) -> (String, String) {
     let mut proprio = format!("{} {}", v.codice, v.descrizione_breve);
     if v.descrizione_estesa != v.descrizione_breve {
         proprio.push(' ');
         proprio.push_str(&v.descrizione_estesa);
     }
-    let capitoli: Vec<String> = catena(p, v.capitolo).into_iter().map(|(_, d)| d).collect();
-    Some((proprio, capitoli.join(" ")))
+    let testi: Vec<String> = catena(capitoli, v.capitolo)
+        .into_iter()
+        .map(|(_, d)| d)
+        .collect();
+    (proprio, testi.join(" "))
 }
 
 /// IDF di BM25: ln(1 + (N − df + 0,5) / (df + 0,5)), in scala.
@@ -153,11 +170,12 @@ impl IndiceTestuale {
         let mut documenti = Vec::with_capacity(p.voci.len());
         let mut conteggi: BTreeMap<String, Vec<(u32, u32)>> = BTreeMap::new();
         let mut lunghezza_totale = 0u64;
+        let mappa = mappa_capitoli(p);
         for (i, v) in p.voci.iter().enumerate() {
             let Ok(indice) = u32::try_from(i) else { break };
             // Le parole della voce contano il doppio di quelle dei capitoli: il capitolo
             // dà il contesto, la descrizione decide tra voci dello stesso capitolo.
-            let (proprio, capitoli) = testi_voce(p, &v.codice).unwrap_or_default();
+            let (proprio, capitoli) = testi_di(&mappa, v);
             let t: Vec<String> = termini(&proprio)
                 .into_iter()
                 .flat_map(|x| [x.clone(), x])
@@ -177,7 +195,10 @@ impl IndiceTestuale {
                 lunghezza,
                 dimensione: riconosci(&v.unita_misura).dimensione,
                 natura: v.natura,
-                capitoli: catena(p, v.capitolo).into_iter().map(|(c, _)| c).collect(),
+                capitoli: catena(&mappa, v.capitolo)
+                    .into_iter()
+                    .map(|(c, _)| c)
+                    .collect(),
             });
         }
         let n = documenti.len();
@@ -200,8 +221,14 @@ impl IndiceTestuale {
                 },
             );
         }
+        let per_codice = documenti
+            .iter()
+            .enumerate()
+            .filter_map(|(i, d)| Some((d.codice.clone(), u32::try_from(i).ok()?)))
+            .collect();
         Self {
             documenti,
+            per_codice,
             vocabolario,
             per_trigramma,
             lunghezza_totale,
@@ -242,6 +269,15 @@ impl IndiceTestuale {
         out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         out.truncate(SIMILI_MASSIMI);
         out
+    }
+
+    /// `true` se la voce con questo codice rispetta il filtro.
+    #[must_use]
+    pub fn ammette(&self, codice: &str, filtro: &FiltroVoci) -> bool {
+        self.per_codice
+            .get(codice)
+            .and_then(|i| self.documenti.get(*i as usize))
+            .is_some_and(|d| self.ammesso(d, filtro))
     }
 
     fn ammesso(&self, d: &Documento, filtro: &FiltroVoci) -> bool {

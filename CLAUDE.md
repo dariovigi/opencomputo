@@ -15,9 +15,9 @@
   aggiornamento dell'elenco da un nuovo listino (ADR 0022), modello
   tradizionale per tutti i documenti (ADR 0023), cronoprogramma dei lavori con Gantt
   (ADR 0024, schema 7, 57 comandi; sviluppato sul ramo `cronoprogramma`), assistente AI
-  fase 2: listini CSV/JSON e crate `opencomputo-assistente`, senza chiamate ai provider
-  (ADR 0025, ramo `assistente`; fase 3 provider, fase 4 interfaccia, ciascuna su
-  approvazione esplicita del titolare).
+  fasi 2 e 3: listini CSV/JSON, crate `opencomputo-assistente` e `opencomputo-rete`,
+  provider OpenAI e Anthropic, portachiavi, consenso, servizio JSON e CLI (ADR 0025, ramo
+  `assistente`; fase 4 interfaccia solo su approvazione esplicita del titolare).
   Nuovi lavori solo su richiesta dell'utente. Aperti: confronto con un export XPWE reale
   con voci, prova su macOS e Windows.
 * `cargo deny check` deve restare pulito: nessuna eccezione per vulnerabilità; le
@@ -50,7 +50,8 @@
 * Nessun `f32`/`f64` per valori contabili (lint `clippy::float_arithmetic = deny`).
 * Assistente AI (ADR 0025): il modello sceglie handle di candidati e forme del catalogo
   chiuso, mai prezzi, codici o formule; le sue risposte diventano `Comando` validati e
-  provati nella `Sessione`. I test non fanno chiamate AI reali.
+  provati nella `Sessione`. I test non fanno chiamate AI reali. Chiavi solo nel
+  portachiavi, mai in file, log, messaggi o `Debug`; nessuna chiamata senza consenso.
 * Ogni funzionalità dichiarata completata deve avere test eseguiti e passati.
 * Le fixture `tests/fixtures/progetto_esempio_v1.json`, `_v2.json`, `_v3.json`, `_v4.json`, `_v5.json`, `_v6.json` e `_v7.json`, una
   volta generate e verificate, non vanno mai rigenerate: le modifiche di schema

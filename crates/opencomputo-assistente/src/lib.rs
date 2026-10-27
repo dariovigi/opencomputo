@@ -1,7 +1,10 @@
 //! # opencomputo-assistente
 //!
-//! Assistente AI per il computo metrico (ADR 0025). Questo crate contiene le parti
-//! **locali e deterministiche**; le chiamate ai provider arrivano nella fase successiva.
+//! Assistente AI per il computo metrico (ADR 0025). Il crate non apre connessioni né
+//! file: i provider ([`provider`]) costruiscono le richieste e leggono le risposte, ma
+//! la rete passa da un trasporto fornito dal chiamante (`opencomputo-rete`), così tutto
+//! si prova senza chiamate reali. [`flusso::proponi`] collega i passi qui sotto.
+//! **I dati inviati ai provider escono dal computer** ([`consenso`]).
 //!
 //! Flusso di una richiesta:
 //!
@@ -20,8 +23,12 @@
 //! conserva nelle note la lavorazione, la motivazione e le ipotesi.
 
 pub mod candidati;
+pub mod consenso;
+pub mod flusso;
 pub mod forme;
+pub mod prompt;
 pub mod proposta;
+pub mod provider;
 pub mod ricerca;
 pub mod risposta;
 pub mod schema;
@@ -29,6 +36,7 @@ pub mod testo;
 pub mod unita;
 pub mod valori;
 pub mod verifica;
+pub mod vettori;
 
 pub use candidati::{Candidati, Candidato};
 pub use proposta::{Contesto, ErroreRisposta, EsitoProposta, Proposta, valida_selezione};

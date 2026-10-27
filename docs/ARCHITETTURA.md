@@ -6,7 +6,8 @@ Il progetto è un workspace Cargo. Esistono `opencomputo-core` (Fase 1),
 `opencomputo-format-xpwe` e `opencomputo-dcf-parser` (Fase 2), `opencomputo-io`
 (Fase 3), `opencomputo-storage`, `opencomputo-application` e `opencomputo-agent-api`
 (Fase 4), `opencomputo-gui` (Fase 5), `opencomputo-format-listino` e
-`opencomputo-assistente` (assistente AI, fase 2 dell'ADR 0025). Nessun crate è stato
+`opencomputo-assistente` (assistente AI, fase 2 dell'ADR 0025), `opencomputo-rete`
+(fase 3). Nessun crate è stato
 creato vuoto: ognuno è stato aggiunto nella fase in cui ha ricevuto un'implementazione
 reale.
 
@@ -21,7 +22,8 @@ reale.
 | `opencomputo-agent-api` | binario `opencomputo`: CLI e servizio JSON per agenti AI | 4 | **presente** |
 | `opencomputo-gui` | applicazione desktop multifinestra (Tauri v2) | 5 | **presente** ([ADR 0009](adr/0009-gui-tauri.md)) |
 | `opencomputo-format-listino` | lettura di listini prezzi CSV e JSON | assistente 2 | **presente** ([ADR 0025](adr/0025-assistente-ai.md)) |
-| `opencomputo-assistente` | assistente AI: ricerca nei prezzari, validazione delle risposte del modello, traduzione in comandi | assistente 2 | **presente**, senza chiamate ai provider ([ADR 0025](adr/0025-assistente-ai.md)) |
+| `opencomputo-assistente` | assistente AI: ricerca testuale e vettoriale, client dei provider (senza rete propria), consenso, validazione delle risposte, traduzione in comandi | assistente 2–3 | **presente** ([ADR 0025](adr/0025-assistente-ai.md)) |
+| `opencomputo-rete` | trasporto HTTPS e portachiavi del sistema per l'assistente | assistente 3 | **presente** ([ADR 0025](adr/0025-assistente-ai.md)) |
 
 ## Dipendenze consentite tra i crate
 
@@ -34,12 +36,16 @@ gui ──► agent-api (servizio JSON) ──► application ──► core
                                           ├──► format-listino ──► core
                                           └──► io ──► core
 
-assistente ──► application ──► core
+agent-api ──► rete ──► assistente ──► application ──► core
+         └──► assistente
 ```
 
 L'assistente costruisce comandi di `application` e li prova nella `Sessione`: non scrive
-il modello e non calcola quantità né importi (ADR 0025). Le chiamate ai provider AI
-arriveranno nella fase 3 dell'assistente, in un modulo separato dalla validazione.
+il modello e non calcola quantità né importi (ADR 0025). I client dei provider stanno nel
+modulo `provider`, separato dalla validazione, e spediscono le richieste attraverso il
+tratto `Trasporto`: l'unica implementazione con la rete è in `opencomputo-rete`, insieme
+al portachiavi del sistema. Il servizio JSON (`agent-api`, modulo `assistente`) collega i
+pezzi: configurazione, consenso, cache dei vettori.
 
 La GUI usa lo stesso servizio JSON della CLI e degli agenti (ADR 0009): non esiste una
 via di modifica riservata all'interfaccia grafica.
@@ -123,6 +129,14 @@ Dipende solo da `opencomputo-core`; nessuna dipendenza esterna nuova.
 | `risposta`, `schema` | risposte del modello e schemi JSON per il tool use con `strict: true` |
 | `proposta` | validazione della risposta, proposta tracciata, comandi |
 | `verifica` | prova dei comandi nella `Sessione` |
+| `provider` | tratti `Trasporto`, `Attesa`, `Embedding`, `Generazione`; `Segreto`; errori tipizzati |
+| `provider::openai`, `provider::anthropic` | client degli embedding e della generazione con output strutturato |
+| `provider::riprova` | classificazione degli errori HTTP e nuovi tentativi con `retry-after` |
+| `provider::chiavi` | tratto `ArchivioChiavi` e archivio in memoria per i test |
+| `vettori` | spazio di embedding, indice vettoriale con cache `OCVEC`, indicizzazione a lotti; coseno nell'unico modulo con aritmetica `f32` |
+| `prompt` | istruzioni e messaggi delle due chiamate al modello |
+| `consenso` | testo versionato del consenso all'invio dei dati |
+| `flusso` | dalla richiesta alla proposta: analisi, ricerca ibrida, selezione, validazione |
 
 ## Organizzazione di `opencomputo-io`
 

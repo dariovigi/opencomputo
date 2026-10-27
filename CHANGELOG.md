@@ -29,6 +29,26 @@ Prima versione: tutte le fasi di sviluppo 1–6. Dettagli in `docs/STATO.md`.
 
 ### Aggiunto
 
+* **Assistente AI, provider** (ADR 0025, fase 3; riga di comando e servizio JSON,
+  l'interfaccia grafica arriverà dopo):
+  * embedding OpenAI (`text-embedding-3-small` predefinito, modello e dimensioni
+    configurabili) e generazione Anthropic (`claude-sonnet-5-5` predefinito) con
+    risposte JSON vincolate a uno schema; uso forzato di uno strumento come alternativa,
+    rifiutato in anticipo sui modelli che non lo accettano; modelli sconosciuti solo con
+    la modalità indicata;
+  * nuovi tentativi su sovraccarico, limiti di frequenza ed errori del server, con
+    `retry-after`; nessun nuovo tentativo con chiave rifiutata o credito esaurito; errori
+    con codice stabile (`motivo`) e identificativo della richiesta del provider;
+  * ricerca ibrida (parole + significato, fusione delle classifiche in interi) e cache
+    dei vettori per prezzario, salvata durante l'indicizzazione: ripresa dopo
+    un'interruzione, ricalcolo delle sole voci cambiate;
+  * chiavi nel portachiavi del sistema (crate `opencomputo-rete`), mai nei file né nei
+    messaggi; da riga di comando lette da stdin;
+  * consenso versionato all'invio dei dati, obbligatorio prima di ogni chiamata;
+  * richieste `assistente_stato`, `assistente_configura`, `assistente_chiave`,
+    `assistente_consenso`, `assistente_indicizza`, `assistente_cerca`,
+    `assistente_proponi`, `assistente_applica`; comando `opencomputo assistente` con
+    codice di uscita 4 per gli errori dell'assistente.
 * **Assistente AI, parti locali** (ADR 0025; nessuna chiamata ai provider in questa
   fase):
   * listini prezzi **CSV e JSON** (crate `opencomputo-format-listino`): colonne

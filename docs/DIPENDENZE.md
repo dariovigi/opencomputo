@@ -48,6 +48,30 @@ del PDF sono le metriche Adobe Core 14, liberamente distribuibili.
 dipendenze esterne: usano `encoding_rs`, `sha2`, `serde`, `serde_json`, `thiserror`,
 `chrono` e `rust_decimal`, già presenti. Il lettore CSV è scritto nel crate.
 
+Dipendenze dirette di `opencomputo-rete` (ADR 0025, fase 3: collegamento ai provider AI
+e portachiavi):
+
+| Crate | Uso | Licenza |
+|-------|-----|---------|
+| `reqwest` 0.13 (solo `blocking` e `rustls-no-provider`) | client HTTPS bloccante | MIT OR Apache-2.0 |
+| `rustls` 0.23 (feature `ring`, `std`, `tls12`) | TLS; crittografia `ring`, nessun OpenSSL | Apache-2.0 OR ISC OR MIT |
+| `keyring-core` 1.0 | interfaccia comune ai portachiavi | MIT OR Apache-2.0 |
+| `apple-native-keyring-store` 1.0 (feature `keychain`; solo macOS) | Portachiavi di macOS | MIT OR Apache-2.0 |
+| `windows-native-keyring-store` 1.1 (solo Windows) | Gestione credenziali di Windows | MIT OR Apache-2.0 |
+| `linux-keyutils-keyring-store` 1.0 (solo Linux) | keyring del kernel | MIT OR Apache-2.0 |
+
+Indirette principali: `ring` (Apache-2.0 AND ISC), `rustls-webpki` (ISC),
+`rustls-platform-verifier` e `rustls-native-certs` (certificati del sistema operativo),
+`hyper`, `hyper-util`, `hyper-rustls`, `http`, `tokio` (usato internamente da `reqwest`
+anche in modalità bloccante), `tower`, `url` e `idna` con i dati ICU (Unicode-3.0). Circa
+80 crate esterni in più sul solo Linux. Per questo `deny.toml` ammette ora la licenza
+**ISC** (permissiva, equivalente alla MIT) e un'eccezione puntuale per
+`webpki-root-certs` (CDLA-Permissive-2.0, licenza permissiva dei dati dei certificati
+radice; compare solo nel grafo delle piattaforme che non hanno certificati di sistema e
+non viene compilato su Linux, macOS e Windows). `cargo deny check`: pulito.
+
+`opencomputo-assistente` aggiunge `sha2` (impronte dei testi indicizzati), già presente.
+
 Dipendenze dirette aggiuntive di `opencomputo-agent-api`:
 
 | Crate | Uso | Licenza |

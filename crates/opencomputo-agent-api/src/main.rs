@@ -181,6 +181,12 @@ enum Sotto {
     },
     /// Regole ed esempi dei comandi JSON, per agenti e script.
     SchemaComandi,
+    /// Assistente AI (OpenAI per gli embedding, Anthropic per la generazione): i dati
+    /// inviati escono dal computer; serve il consenso (`assistente consenso`).
+    Assistente {
+        #[command(subcommand)]
+        azione: AzioneAssistente,
+    },
     /// Servizio con stato: una richiesta JSON per riga su stdin, una risposta per riga.
     Servizio {
         /// File di progetto da aprire subito.
@@ -189,6 +195,104 @@ enum Sotto {
         #[arg(long)]
         permissivo: bool,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum AzioneAssistente {
+    /// Configurazione, chiavi presenti, consenso e testo del consenso.
+    Stato,
+    /// Modifica la configurazione (i valori non indicati restano invariati).
+    Configura {
+        /// Modello di embedding OpenAI.
+        #[arg(long)]
+        modello_embedding: Option<String>,
+        /// Dimensioni dei vettori (0: quelle del modello).
+        #[arg(long)]
+        dimensioni: Option<u32>,
+        /// Modello di generazione Anthropic.
+        #[arg(long)]
+        modello_generazione: Option<String>,
+        /// Modalità dell'output strutturato.
+        #[arg(long, value_enum)]
+        modalita: Option<ModalitaCli>,
+        /// Limite di token della risposta di analisi.
+        #[arg(long)]
+        max_token_analisi: Option<u32>,
+        /// Limite di token della risposta di selezione.
+        #[arg(long)]
+        max_token_selezione: Option<u32>,
+    },
+    /// Salva nel portachiavi del sistema la chiave letta da stdin (una riga); mai come
+    /// argomento, che resterebbe nella cronologia della shell.
+    Chiave {
+        /// Provider.
+        #[arg(value_enum)]
+        provider: ProviderCli,
+        /// Elimina la chiave invece di salvarla.
+        #[arg(long)]
+        elimina: bool,
+    },
+    /// Senza opzioni mostra il testo del consenso; `--accetto VERSIONE` lo accetta,
+    /// `--revoca` lo revoca.
+    Consenso {
+        /// Versione del testo letto e accettato.
+        #[arg(long, conflicts_with = "revoca")]
+        accetto: Option<u32>,
+        /// Revoca il consenso.
+        #[arg(long)]
+        revoca: bool,
+    },
+    /// Calcola gli embedding delle voci di un prezzario (invia le descrizioni a OpenAI);
+    /// riprende un'indicizzazione interrotta. Avanzamento su stderr.
+    Indicizza {
+        /// Prezzario (DCF, XPWE, .ocp, listino CSV o JSON).
+        prezzario: PathBuf,
+    },
+    /// Cerca nel prezzario: ibrida se è indicizzato, altrimenti solo testuale.
+    Cerca {
+        /// Prezzario.
+        prezzario: PathBuf,
+        /// Testo da cercare.
+        #[arg(required = true)]
+        testo: Vec<String>,
+        /// Voci restituite al massimo.
+        #[arg(long, default_value_t = opencomputo_agent_api::servizio::LIMITE_RICERCA)]
+        limite: usize,
+        /// Grandezza attesa (`m`, `m2`, `m3`, `kg`, …).
+        #[arg(long)]
+        unita: Option<String>,
+    },
+    /// Propone voci di computo dalla richiesta e le prova sul progetto; con
+    /// `--applica` le esegue e salva il file se la prova è riuscita.
+    Proponi {
+        /// File di progetto.
+        file: PathBuf,
+        /// Prezzario da cui scegliere le voci.
+        #[arg(long)]
+        prezzario: PathBuf,
+        /// Computo di destinazione (obbligatorio se ce n'è più di uno).
+        #[arg(long)]
+        computo: Option<String>,
+        /// Esegue la proposta e salva il progetto.
+        #[arg(long)]
+        applica: bool,
+        /// Richiesta in linguaggio naturale.
+        #[arg(required = true)]
+        testo: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ProviderCli {
+    Openai,
+    Anthropic,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ModalitaCli {
+    Automatica,
+    Json,
+    StrumentoForzato,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -509,7 +613,162 @@ fn esegui(cli: Sotto) -> Result<(Value, u8), ErroreApplicazione> {
             })?)
         }
         Sotto::SchemaComandi => ok(Servizio::new().gestisci(Richiesta::SchemaComandi {})?),
+        Sotto::Assistente { azione } => assistente(azione),
         Sotto::Servizio { .. } => Err(richiesta_errata("servizio gestito a parte")),
+    }
+}
+
+/// Nome con cui il prezzario indicato è caricato nella sessione.
+const PREZZARIO_CLI: &str = "prezzario";
+
+/// Servizio con un progetto vuoto in memoria e il prezzario caricato.
+fn con_prezzario(mut s: Servizio, prezzario: PathBuf) -> Result<Servizio, ErroreApplicazione> {
+    if s.sessione().is_none() {
+        s.gestisci(Richiesta::Nuovo {
+            titolo: "assistente".into(),
+            percorso: None,
+        })?;
+    }
+    s.gestisci(Richiesta::CaricaPrezzario {
+        nome: PREZZARIO_CLI.into(),
+        percorso: prezzario,
+    })?;
+    Ok(s)
+}
+
+fn leggi_chiave() -> Result<String, ErroreApplicazione> {
+    let mut riga = String::new();
+    io::stdin()
+        .read_line(&mut riga)
+        .map_err(|e| ErroreApplicazione::File {
+            messaggio: format!("stdin: {e}"),
+        })?;
+    let chiave = riga.trim().to_owned();
+    if chiave.is_empty() {
+        return Err(richiesta_errata(
+            "nessuna chiave su stdin (per eliminarla usare --elimina)",
+        ));
+    }
+    Ok(chiave)
+}
+
+fn assistente(azione: AzioneAssistente) -> Result<(Value, u8), ErroreApplicazione> {
+    use opencomputo_agent_api::assistente::{ChiaveApi, Modifiche};
+    use opencomputo_assistente::provider::Provider;
+    use opencomputo_assistente::provider::anthropic::ModalitaOutput;
+    let ok = |v: Value| Ok((v, uscita::OK));
+    let mut s = Servizio::new();
+    match azione {
+        AzioneAssistente::Stato => ok(s.gestisci(Richiesta::AssistenteStato {})?),
+        AzioneAssistente::Configura {
+            modello_embedding,
+            dimensioni,
+            modello_generazione,
+            modalita,
+            max_token_analisi,
+            max_token_selezione,
+        } => ok(s.gestisci(Richiesta::AssistenteConfigura {
+            configurazione: Modifiche {
+                modello_embedding,
+                dimensioni_embedding: dimensioni,
+                modello_generazione,
+                modalita_output: modalita.map(|m| match m {
+                    ModalitaCli::Automatica => ModalitaOutput::Automatica,
+                    ModalitaCli::Json => ModalitaOutput::Json,
+                    ModalitaCli::StrumentoForzato => ModalitaOutput::StrumentoForzato,
+                }),
+                max_token_analisi,
+                max_token_selezione,
+            },
+        })?),
+        AzioneAssistente::Chiave { provider, elimina } => {
+            let chiave = if elimina {
+                None
+            } else {
+                Some(ChiaveApi::from(leggi_chiave()?))
+            };
+            ok(s.gestisci(Richiesta::AssistenteChiave {
+                provider: match provider {
+                    ProviderCli::Openai => Provider::Openai,
+                    ProviderCli::Anthropic => Provider::Anthropic,
+                },
+                chiave,
+            })?)
+        }
+        AzioneAssistente::Consenso { accetto, revoca } => {
+            if revoca {
+                ok(s.gestisci(Richiesta::AssistenteConsenso {
+                    accetto: false,
+                    versione: None,
+                })?)
+            } else if let Some(versione) = accetto {
+                ok(s.gestisci(Richiesta::AssistenteConsenso {
+                    accetto: true,
+                    versione: Some(versione),
+                })?)
+            } else {
+                let stato = s.gestisci(Richiesta::AssistenteStato {})?;
+                ok(stato.get("consenso").cloned().unwrap_or(Value::Null))
+            }
+        }
+        AzioneAssistente::Indicizza { prezzario } => {
+            let s = Servizio::new().con_avanzamento(Box::new(|v: &Value| {
+                eprintln!("{v}");
+            }));
+            let mut s = con_prezzario(s, prezzario)?;
+            ok(s.gestisci(Richiesta::AssistenteIndicizza {
+                prezzario: PREZZARIO_CLI.into(),
+            })?)
+        }
+        AzioneAssistente::Cerca {
+            prezzario,
+            testo,
+            limite,
+            unita,
+        } => {
+            let mut s = con_prezzario(s, prezzario)?;
+            ok(s.gestisci(Richiesta::AssistenteCerca {
+                prezzario: PREZZARIO_CLI.into(),
+                testo: testo.join(" "),
+                limite: Some(limite),
+                unita,
+            })?)
+        }
+        AzioneAssistente::Proponi {
+            file,
+            prezzario,
+            computo,
+            applica,
+            testo,
+        } => {
+            s.gestisci(Richiesta::Apri { percorso: file })?;
+            let mut s = con_prezzario(s, prezzario)?;
+            let mut proposta = s.gestisci(Richiesta::AssistenteProponi {
+                prezzario: PREZZARIO_CLI.into(),
+                testo: testo.join(" "),
+                computo,
+            })?;
+            let provata = proposta
+                .pointer("/prova/ok")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if !applica {
+                return ok(proposta);
+            }
+            if !provata {
+                return Ok((proposta, uscita::RIFIUTATA));
+            }
+            let esito = s.gestisci(Richiesta::AssistenteApplica {})?;
+            let salvato = s.gestisci(Richiesta::Salva {
+                percorso: None,
+                gzip: None,
+            })?;
+            if let Value::Object(m) = &mut proposta {
+                m.insert("applicata".into(), esito);
+                m.insert("salvataggio".into(), salvato);
+            }
+            ok(proposta)
+        }
     }
 }
 

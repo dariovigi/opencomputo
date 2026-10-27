@@ -1,8 +1,10 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-10-27. Ultimo lavoro, sul ramo `assistente`: la **fase 2
-dell'assistente AI** (listini CSV e JSON, ricerca nei prezzari, validazione delle risposte
-del modello e traduzione in comandi; ADR 0025), dopo il
+Ultimo aggiornamento: 2026-10-27. Ultimo lavoro, sul ramo `assistente`: la **fase 3
+dell'assistente AI** (provider OpenAI e Anthropic, portachiavi, consenso, ricerca
+ibrida, servizio JSON e riga di comando; ADR 0025), dopo la fase 2 (listini CSV e JSON,
+ricerca nei prezzari, validazione delle risposte del modello e traduzione in comandi),
+dopo il
 **cronoprogramma dei lavori** con editor in stile project management e diagramma di
 Gantt (ADR 0024, schema 7), dopo il **modello tradizionale per tutti i
 documenti** (ADR 0023), dopo l'**aggiornamento da listino** (confronto
@@ -22,6 +24,91 @@ Restano aperti:
 * il trascinamento tra finestre sui sistemi reali (WebView2, WKWebView, WebKitGTK);
 * il confronto con documenti PriMus reali (serve un export XPWE con voci);
 * la prova su macOS e Windows.
+
+## Assistente AI, fase 3: provider, portachiavi, consenso
+
+Approvata dal titolare il 2026-10-27 («Approvo, passa alla Fase 3»). Decisioni 13–22
+dell'[ADR 0025](adr/0025-assistente-ai.md). L'interfaccia grafica è la fase 4, da
+approvare.
+
+### Cosa è cambiato
+
+* **`opencomputo-assistente`**:
+  * modulo `provider`: tratti `Trasporto` e `Attesa` (la rete e l'orologio restano
+    fuori dal crate), `Embedding`, `Generazione`, `Segreto` (mai in `Debug`), errori
+    tipizzati con codice stabile, `Annullamento`;
+  * client OpenAI degli embedding: lotti, controllo di numero, ordine, dimensioni e
+    finitezza dei vettori; `dimensions` solo ai modelli che lo accettano;
+  * client Anthropic: modalità JSON (`output_config.format`) predefinita, uso forzato
+    di uno strumento rifiutato prima della chiamata sui quattro modelli che non lo
+    accettano, modelli fuori elenco solo con modalità esplicita; `refusal` e
+    `max_tokens` come errori;
+  * nuovi tentativi (`riprova`): 5 tentativi, attesa esponenziale con variazione,
+    `retry-after` fino a 120 s; 401/403/402 e `insufficient_quota` non si ripetono;
+  * `vettori`: spazio di embedding versionato, indice con impronta SHA-256 del testo di
+    ogni voce, formato binario `OCVEC`, indicizzazione a lotti con avanzamento e
+    ripresa; coseno nell'unico modulo con aritmetica `f32`;
+  * ricerca ibrida con *reciprocal rank fusion* in interi; ricerca testuale resa
+    lineare (mappa dei codici e dei capitoli, prima quadratica);
+  * `prompt`, `consenso` (testo versione 1), `flusso` (analisi → ricerca → selezione →
+    validazione).
+* **Nuovo crate `opencomputo-rete`**: `TrasportoHttps` (`reqwest` bloccante, `rustls`
+  con `ring`, certificati del sistema, connessione entro 10 s, risposte fino a 64 MB),
+  `AttesaReale`, `PortachiaviSistema` (macOS, Windows, Linux), `ChiaviConAmbiente` solo
+  con la feature di sviluppo `chiavi-da-ambiente`.
+* **application**: errore `Assistente { motivo, messaggio }`.
+* **agent-api**: modulo `assistente` (configurazione in `assistente.json`, cache dei
+  vettori salvata al più ogni 30 s e alla fine, ripartenza dalla cache più recente dello
+  stesso spazio quando il prezzario cambia), otto richieste `assistente_*`, comando
+  `opencomputo assistente` (`stato`, `configura`, `chiave`, `consenso`, `indicizza`,
+  `cerca`, `proponi [--applica]`), codice di uscita 4. La proposta si applica solo con
+  `assistente_applica` (passo annullabile); aprire o chiudere un progetto la dimentica.
+* **deny.toml**: licenza ISC ammessa; eccezione per `webpki-root-certs`
+  (CDLA-Permissive-2.0).
+
+### Verifica (Rust 1.97.0, Linux)
+
+* Nessuna chiamata reale ai provider: i test usano trasporti finti che imitano le
+  risposte e gli errori di OpenAI e Anthropic, un server HTTP locale (127.0.0.1) per il
+  trasporto reale e l'archivio finto di `keyring-core` per il portachiavi.
+* Nuovi test (44):
+  * assistente, unità (+24): corpo delle richieste nelle due modalità, scelta della
+    modalità per modello, estrazione della risposta, `refusal`, `max_tokens`,
+    classificazione degli errori e nuovi tentativi con `retry-after`, quota esaurita,
+    annullamento, lotti, controllo dei vettori, formato della cache e suoi rifiuti
+    (spazio diverso, file troncato o con byte in più), coseno, chiavi mai in `Debug`;
+  * assistente, integrazione (+6): indicizzazione interrotta e ripresa, voci cambiate e
+    rimosse, flusso completo con embedding e modello finti (il modello finto legge i
+    candidati davvero inviati; nessun codice né prezzo nei messaggi), ricerca solo
+    testuale senza indice valido, dati bloccanti mancanti, ricerca ibrida; prestazioni su 30 000 voci
+    (indice testuale 4,5 s e ricerca ibrida 0,1 s in debug);
+  * rete (5): intestazioni e corpo, tempo scaduto, connessione rifiutata, 529 e 429 con
+    `retry-after` reale, 401 senza nuovi tentativi, portachiavi; nessuna chiave nei
+    messaggi d'errore;
+  * servizio (8) e CLI (1): consenso (versione sbagliata, revoca), nessuna chiamata senza
+    consenso o senza chiave, configurazione persistente e validata, chiavi mai nelle
+    risposte né nel file di configurazione, cache riusata da un nuovo processo, nuovo
+    spazio che invalida la cache, prezzario modificato con una sola voce ricalcolata,
+    proposta provata, applicata (86,40 €) e annullata, proposta dimenticata cambiando
+    progetto, servizio trasferibile tra thread.
+* `cargo test --workspace --exclude opencomputo-gui`: 382 passati, 0 falliti, 9
+  ignorati (prima della fase: 338, 0, 9). `cargo clippy --all-targets --all-features`
+  (con e senza la feature di sviluppo), `cargo fmt --check`, `cargo deny check`: puliti.
+  `cargo doc`: nessun avviso nei crate toccati (restano due avvisi preesistenti di link
+  in `core` e `application`).
+* **Non verificato**: chiamate reali a OpenAI e Anthropic (nessuna chiave qui, e la rete
+  di questo ambiente non le raggiunge); portachiavi di macOS e Windows (codice non
+  compilato qui: mancano i target); compilazione del crate grafico, che ora include le
+  nuove dipendenze (su Linux richiede WebKitGTK).
+
+### Aperti
+
+* Prova sul Mac del titolare con le sue chiavi: `assistente chiave`, `consenso`,
+  `indicizza` su un prezzario reale, `proponi` su qualche richiesta tipica.
+* Su Linux il keyring del kernel non conserva le chiavi dopo il riavvio; un archivio
+  Secret Service è un possibile seguito.
+* Annullamento dall'interfaccia e chiamate fuori dal thread principale: fase 4.
+* I file della cache non vengono mai cancellati automaticamente.
 
 ## Assistente AI, fase 2: parti locali
 

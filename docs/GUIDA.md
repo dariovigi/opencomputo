@@ -703,6 +703,115 @@ rigo senza valori, un prezzo cambiato in elenco). Un clic porta alla voce intere
 OpenComputo rifiuta in ogni caso le modifiche che introdurrebbero un errore e ne mostra
 il motivo, lasciando il progetto com'era.
 
+## Assistente AI (da riga di comando)
+
+L'assistente propone voci di computo a partire da una descrizione in linguaggio naturale
+(«tinteggiatura di due pareti di 4 x 3 m»), scegliendo solo voci del prezzario caricato.
+Per ora si usa dalla riga di comando e dal servizio JSON; l'interfaccia grafica arriverà
+in seguito.
+
+**I dati inviati escono dal computer.** L'assistente usa due servizi esterni:
+
+* **OpenAI** (embedding) riceve il testo delle voci del prezzario (codice, descrizioni,
+  capitoli), per la ricerca per significato, e il testo delle ricerche;
+* **Anthropic** (generazione) riceve la richiesta e la descrizione, l'unità di misura e i
+  capitoli delle voci candidate, senza codici né prezzi.
+
+Non vengono inviati prezzi, importi, dati del committente né il file del progetto.
+
+Prezzi, quantità e importi non li sceglie né li calcola il modello: li calcola
+OpenComputo, con le stesse regole e gli stessi controlli di sempre. Se il prezzario
+viene da un DCF distribuito da ACCA, le sue condizioni d'uso ne vietano l'uso con altri
+software: verificare di avere il diritto di inviarne il contenuto.
+
+### Consenso
+
+Senza consenso l'assistente non chiama nessun servizio; la ricerca testuale resta
+disponibile. Per leggere il testo e accettarlo:
+
+```sh
+opencomputo assistente consenso            # mostra il testo e la sua versione
+opencomputo assistente consenso --accetto 1
+opencomputo assistente consenso --revoca
+```
+
+Se il testo cambia, cambia la versione e va accettato di nuovo.
+
+### Chiavi
+
+Servono una chiave API di OpenAI e una di Anthropic. Si salvano nel portachiavi del
+sistema (Portachiavi di macOS, Gestione credenziali di Windows; su Linux il keyring del
+kernel, che **non** sopravvive al riavvio), mai nei file di OpenComputo. La chiave si
+scrive su stdin, non come argomento, così non resta nella cronologia della shell:
+
+```sh
+opencomputo assistente chiave openai       # incollare la chiave e premere Invio
+opencomputo assistente chiave anthropic
+opencomputo assistente chiave openai --elimina
+opencomputo assistente stato               # quali chiavi ci sono (mai il loro valore)
+```
+
+### Modelli e configurazione
+
+Predefiniti: `text-embedding-3-small` per gli embedding e `claude-sonnet-5-5` per la
+generazione, con risposte in JSON vincolate a uno schema. Si possono cambiare:
+
+```sh
+opencomputo assistente configura --modello-generazione claude-opus-5-5
+opencomputo assistente configura --modello-embedding text-embedding-3-large --dimensioni 1024
+opencomputo assistente configura --max-token-selezione 24000
+```
+
+Un modello di generazione che OpenComputo non conosce si accetta solo indicando
+`--modalita json` o `--modalita strumento-forzato`: non tutti i modelli supportano le
+stesse funzioni. Claude Opus 5.5, Sonnet 5.5, Fable 5.1 e Mythos 5.1 non accettano la
+modalità `strumento-forzato`.
+
+La configurazione sta in `assistente.json`, nella cartella `~/Library/Application
+Support/OpenComputo` (macOS), `%APPDATA%\OpenComputo` (Windows) o
+`~/.config/opencomputo` (Linux); la variabile `OPENCOMPUTO_CONFIG` ne indica un'altra.
+
+### Indicizzare un prezzario
+
+Per la ricerca per significato le voci del prezzario vanno indicizzate una volta:
+
+```sh
+opencomputo assistente indicizza prezzario-regionale.dcf
+```
+
+L'avanzamento compare su stderr. I vettori si conservano nella sottocartella `cache`
+della configurazione; un'indicizzazione interrotta riprende dalle voci mancanti, e quando
+il prezzario cambia si ricalcolano solo le voci con una descrizione diversa. Cambiando
+modello o dimensioni degli embedding serve una nuova indicizzazione. I file della cache
+si possono cancellare in qualsiasi momento.
+
+```sh
+opencomputo assistente cerca prezzario-regionale.dcf "tinteggiatura pareti interne" --unita m2
+```
+
+La ricerca è «ibrida» (parole e significato) se il prezzario è indicizzato con il modello
+configurato, altrimenti solo per parole, senza rete.
+
+### Proporre il computo
+
+```sh
+opencomputo assistente proponi lavori.ocp --prezzario prezzario-regionale.dcf \
+    "Tinteggiatura di due pareti di 4 x 3 m e di un soffitto di 4 x 5 m"
+```
+
+La risposta contiene le lavorazioni riconosciute, le voci scelte con la motivazione, le
+**ipotesi** (valori non presenti nella richiesta), le **informazioni mancanti**, gli
+avvisi e la prova dei comandi sul progetto (totali prima e dopo). Il file non cambia. Se
+mancano dati indispensabili l'esito è `da_chiarire`, con le domande da cui ripartire.
+
+Con `--applica` la proposta, se la prova è riuscita, viene eseguita e il progetto salvato;
+le voci aggiunte riportano nelle note la lavorazione, la motivazione e le ipotesi, e si
+annullano come ogni altra modifica.
+
+Codice di uscita 4: errore dell'assistente (consenso mancante, chiave assente o rifiutata,
+credito esaurito, rete, risposta del modello inutilizzabile). Il campo `motivo`
+dell'errore lo indica in modo stabile.
+
 ## Uso da script e da agenti AI
 
 Il programma `opencomputo` (riga di comando) lavora sugli stessi file con gli stessi
@@ -724,3 +833,6 @@ controlli: `opencomputo schema-comandi` elenca i comandi disponibili. Vedi il RE
   per volta in ogni finestra principale: per lavorare su due progetti si avvia
   l'applicazione due volte.
 * L'applicazione è stata provata su Linux; macOS e Windows sono da provare.
+* Assistente AI: non ancora nell'interfaccia grafica; le chiamate reali a OpenAI e
+  Anthropic e i portachiavi di macOS e Windows non sono ancora stati provati; su Linux le
+  chiavi si perdono al riavvio.

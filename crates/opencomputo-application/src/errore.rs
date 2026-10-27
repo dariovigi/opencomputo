@@ -55,6 +55,15 @@ pub enum ErroreApplicazione {
         /// Messaggio.
         messaggio: String,
     },
+    /// Errore dell'assistente AI (ADR 0025): consenso mancante, chiave assente, errore
+    /// di un provider, risposta del modello inutilizzabile.
+    #[error("{messaggio}")]
+    Assistente {
+        /// Codice stabile (`consenso_mancante`, `chiave_assente`, `rete`, …).
+        motivo: String,
+        /// Messaggio.
+        messaggio: String,
+    },
 }
 
 impl From<opencomputo_storage::ErroreStorage> for ErroreApplicazione {

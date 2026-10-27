@@ -34,11 +34,20 @@ allow = [
   "CC0-1.0",
   "Unlicense",
   "Unicode-3.0",
+  # Permissiva (equivalente a MIT/BSD-2), compatibile con la EUPL-1.2: ring e rustls-webpki,
+  # la crittografia TLS dell'assistente AI (ADR 0025).
+  "ISC",
   # Copyleft debole a livello di file, compatibile con la EUPL-1.2 (crate CSS della webview).
   "MPL-2.0",
   # Licenza del progetto.
   "EUPL-1.2",
 ]
+
+# Certificati radice di Mozilla (licenza dei dati, permissiva): rustls-platform-verifier li
+# usa solo compilando per wasm32, che per opencomputo-rete non avviene.
+[[licenses.exceptions]]
+crate = "webpki-root-certs"
+allow = ["CDLA-Permissive-2.0"]
 
 [bans]
 multiple-versions = "allow"

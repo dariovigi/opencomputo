@@ -1,6 +1,6 @@
 # ADR 0025 — Assistente AI per il computo e listini CSV/JSON
 
-* Stato: accettato (fase 2 dell'assistente: parti locali, senza chiamate AI)
+* Stato: accettato (fase 2: parti locali; fase 3: provider, portachiavi, consenso)
 * Data: 2026-10-27
 
 ## Contesto
@@ -70,12 +70,75 @@ Il titolare ha chiesto inoltre di poter importare prezzari in DCF.
     calcolato in interi a virgola fissa (nessuna aritmetica in virgola mobile, stessa
     classifica su ogni piattaforma), termini simili per trigrammi, testo arricchito con i
     capitoli antenati della voce. La ricerca non modifica il prezzario.
-11. **Fasi.** Fase 2: parti locali (questo ADR). Fase 3: provider OpenAI (embedding) e
-    Anthropic (tool use con `strict: true`), portachiavi, consenso. Fase 4: interfaccia,
-    come viste JavaScript in `opencomputo-gui` (decisione del titolare del 2026-10-27).
-12. **Vettori di embedding (fase 3).** Il lint `clippy::float_arithmetic = deny` resta.
-    Il prodotto scalare tra vettori `f32` vivrà in un solo modulo con un `#[allow]`
-    motivato; nessun valore contabile passa da quel modulo.
+11. **Fasi.** Fase 2: parti locali. Fase 3: provider OpenAI (embedding) e Anthropic
+    (output strutturato), portachiavi, consenso, esposti dal servizio JSON e dalla riga
+    di comando. Fase 4: interfaccia, come viste JavaScript in `opencomputo-gui`
+    (decisione del titolare del 2026-10-27).
+12. **Vettori di embedding.** Il lint `clippy::float_arithmetic = deny` resta. La
+    similarità del coseno tra vettori `f32` vive solo in `vettori::calcolo`, con un
+    `#[allow]` motivato; il punteggio esce come intero scalato e nessun valore contabile
+    passa da quel modulo. La ricerca ibrida unisce le classifiche testuale e vettoriale
+    con la *reciprocal rank fusion* in interi (k = 60).
+
+### Fase 3 (2026-10-27)
+
+13. **Due crate.** `opencomputo-assistente` contiene i client dei provider come codice
+    puro: costruiscono le richieste, interpretano risposte ed errori, decidono i nuovi
+    tentativi, ma spediscono attraverso il tratto `Trasporto` e aspettano attraverso
+    `Attesa`. Il nuovo crate `opencomputo-rete` fornisce le implementazioni reali
+    (`reqwest` bloccante con `rustls` e crittografia `ring`, certificati del sistema;
+    portachiavi del sistema operativo con `keyring-core`). Così tutti i test dei client
+    girano con trasporti finti, senza rete e senza chiavi.
+14. **Output strutturato di Anthropic.** Predefinita la modalità JSON
+    (`output_config.format` con `json_schema`), supportata da tutti i modelli dell'elenco
+    verificato sulla documentazione. L'uso forzato di uno strumento con `strict: true`
+    resta disponibile, ma è rifiutato prima della chiamata per Claude Opus 5.5, Sonnet
+    5.5, Fable 5.1 e Mythos 5.1, che non lo accettano (errore 400). Un modello fuori
+    elenco si usa solo indicando esplicitamente la modalità: non si presume che ogni
+    modello supporti le stesse funzioni. `stop_reason` `refusal` e `max_tokens` sono
+    errori tipizzati.
+15. **Errori e nuovi tentativi.** 401/403 (chiave rifiutata), 402 e 429 con
+    `insufficient_quota` (credito) non si ripetono. 408, 409, 429, 5xx e 529 si ripetono
+    fino a 5 volte con attesa esponenziale e variazione casuale, rispettando
+    `retry-after` (al massimo 120 s). L'identificativo della richiesta del provider è
+    conservato nell'errore. Chiavi e corpi delle richieste non compaiono mai in `Debug`,
+    nei messaggi o nei log.
+16. **Embedding.** OpenAI `text-embedding-3-small` predefinito, modello e dimensioni
+    configurabili (`dimensions` solo per i modelli `text-embedding-3`). Lo **spazio** di
+    un indice è modello + dimensioni + versione del testo indicizzato: un indice di un
+    altro spazio non si usa mai. Lotti di al massimo 256 testi e 200 000 caratteri;
+    testi accorciati a 8 000 caratteri.
+17. **Cache dei vettori** in `cache/vettori-<impronta>-<spazio>.bin` nella cartella di
+    configurazione, formato binario versionato `OCVEC` con l'impronta SHA-256 del testo
+    di ogni voce. Salvata (scrittura atomica) dopo ogni lotto: un'indicizzazione
+    interrotta riprende dalle voci mancanti; voci cambiate o rimosse si ricalcolano o si
+    tolgono. Senza un indice completo dello spazio configurato la ricerca è solo
+    testuale, e funziona senza rete.
+18. **Configurazione** in `assistente.json` nella cartella di configurazione
+    (`OPENCOMPUTO_CONFIG`, oppure `~/Library/Application Support/OpenComputo`,
+    `%APPDATA%\OpenComputo`, `$XDG_CONFIG_HOME/opencomputo`): modelli, dimensioni,
+    modalità, limiti di token, consenso. **Mai le chiavi.**
+19. **Chiavi** solo nel portachiavi del sistema operativo (servizio `OpenComputo`, utenti
+    `openai` e `anthropic`): Portachiavi di macOS, Gestione credenziali di Windows,
+    keyring del kernel su Linux (non conservato dopo il riavvio; un archivio Secret
+    Service è un possibile seguito). Le variabili `OPENAI_API_KEY` e `ANTHROPIC_API_KEY`
+    si leggono solo nelle build di sviluppo con la feature `chiavi-da-ambiente`. Dalla
+    riga di comando la chiave si legge da stdin, mai da un argomento.
+20. **Consenso versionato.** Il testo (`consenso::TESTO`, versione 1) dice che i dati
+    escono dal computer, quali dati vanno a quale provider, che le chiavi restano nel
+    portachiavi e ricorda le condizioni d'uso dei DCF di ACCA. Va accettato indicando la
+    versione letta; se il testo cambia, il consenso precedente non vale più. Senza
+    consenso nessuna chiamata ai provider; la ricerca testuale resta.
+21. **Servizio JSON.** Richieste `assistente_stato`, `assistente_configura`,
+    `assistente_chiave`, `assistente_consenso`, `assistente_indicizza`,
+    `assistente_cerca`, `assistente_proponi`, `assistente_applica`. La proposta è provata
+    nella sessione e conservata; solo `assistente_applica` la esegue, come un normale
+    passo annullabile. Aprire o chiudere un progetto la dimentica. Gli errori hanno codice
+    `assistente` e un `motivo` stabile (`consenso_mancante`, `chiave_assente`,
+    `chiave_rifiutata`, `quota`, `rete`, `modello_non_supportato`, …); dalla riga di
+    comando escono con codice 4.
+22. **Chiamate bloccanti.** I client sono sincroni: l'interfaccia (fase 4) dovrà
+    eseguirli fuori dal thread principale e potrà interromperli con `Annullamento`.
 
 ## Conseguenze
 

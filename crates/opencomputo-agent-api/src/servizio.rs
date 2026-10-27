@@ -18,6 +18,9 @@ use opencomputo_storage::{Compressione, OpzioniSalvataggio};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use opencomputo_assistente::provider::Provider;
+
+use crate::assistente::{self, Ambiente, Assistente, Avanzamento};
 use crate::{riepilogo, schema};
 
 /// Risultati mostrati da `cerca` se non indicato diversamente.
@@ -190,6 +193,64 @@ pub enum Richiesta {
         #[serde(default)]
         forza: bool,
     },
+    /// Assistente AI: configurazione, chiavi presenti, consenso e suo testo.
+    AssistenteStato {},
+    /// Assistente AI: modifica la configurazione (modelli, dimensioni, limiti).
+    AssistenteConfigura {
+        /// Campi da modificare.
+        configurazione: assistente::Modifiche,
+    },
+    /// Assistente AI: salva la chiave di un provider nel portachiavi del sistema;
+    /// chiave vuota o assente: la elimina.
+    AssistenteChiave {
+        /// Provider (`openai` o `anthropic`).
+        provider: Provider,
+        /// Chiave API.
+        #[serde(default)]
+        chiave: Option<assistente::ChiaveApi>,
+    },
+    /// Assistente AI: accetta (con la versione del testo mostrato) o revoca il consenso
+    /// all'invio dei dati ai provider.
+    AssistenteConsenso {
+        /// `true` per accettare, `false` per revocare.
+        accetto: bool,
+        /// Versione del testo accettato (obbligatoria per accettare).
+        #[serde(default)]
+        versione: Option<u32>,
+    },
+    /// Assistente AI: calcola gli embedding mancanti di un prezzario caricato (invia le
+    /// descrizioni delle voci a OpenAI).
+    AssistenteIndicizza {
+        /// Nome del prezzario caricato.
+        prezzario: String,
+    },
+    /// Assistente AI: cerca nel prezzario caricato; ibrida se l'indice vettoriale è
+    /// completo (invia il testo a OpenAI), altrimenti solo testuale e locale.
+    AssistenteCerca {
+        /// Nome del prezzario caricato.
+        prezzario: String,
+        /// Testo da cercare.
+        testo: String,
+        /// Numero massimo di voci.
+        #[serde(default)]
+        limite: Option<usize>,
+        /// Grandezza attesa (`m2`, `m3`, …) per filtrare le unità di misura.
+        #[serde(default)]
+        unita: Option<String>,
+    },
+    /// Assistente AI: propone voci di computo dalla richiesta (invia richiesta, progetto
+    /// sintetico e candidati ad Anthropic). Il progetto non cambia.
+    AssistenteProponi {
+        /// Nome del prezzario caricato da cui scegliere le voci.
+        prezzario: String,
+        /// Richiesta in linguaggio naturale.
+        testo: String,
+        /// Computo di destinazione (facoltativo se ce n'è uno solo).
+        #[serde(default)]
+        computo: Option<String>,
+    },
+    /// Assistente AI: esegue i comandi dell'ultima proposta (passo annullabile).
+    AssistenteApplica {},
 }
 
 fn richiesta(messaggio: impl Into<String>) -> ErroreApplicazione {
@@ -257,6 +318,7 @@ impl Richiesta {
                 | Self::Ripristina {}
                 | Self::CaricaPrezzario { .. }
                 | Self::Chiudi { .. }
+                | Self::AssistenteApplica {}
         )
     }
 }
@@ -291,6 +353,11 @@ pub struct Servizio {
     percorso: Option<PathBuf>,
     gzip: bool,
     politica: Politica,
+    /// Assistente AI, creato alla prima richiesta `assistente_*`.
+    assistente: Option<Assistente>,
+    /// Ambiente dell'assistente; se assente quello del sistema.
+    ambiente: Option<Ambiente>,
+    avanzamento: Option<Avanzamento>,
 }
 
 impl std::fmt::Debug for Servizio {
@@ -315,6 +382,95 @@ impl Servizio {
     pub fn con_politica(mut self, politica: Politica) -> Self {
         self.politica = politica;
         self
+    }
+
+    /// Ambiente dell'assistente AI (cartella, portachiavi, trasporto); senza questa
+    /// chiamata, alla prima richiesta `assistente_*` si usa [`Ambiente::di_sistema`].
+    #[must_use]
+    pub fn con_ambiente(mut self, ambiente: Ambiente) -> Self {
+        self.ambiente = Some(ambiente);
+        self.assistente = None;
+        self
+    }
+
+    /// Funzione che riceve gli avanzamenti delle operazioni lunghe dell'assistente
+    /// (oggetti JSON con il campo `avanzamento`).
+    #[must_use]
+    pub fn con_avanzamento(mut self, f: Avanzamento) -> Self {
+        self.avanzamento = Some(f);
+        self
+    }
+
+    fn assistente(&mut self) -> Result<&mut Assistente, ErroreApplicazione> {
+        if self.assistente.is_none() {
+            let ambiente = self.ambiente.take().unwrap_or_else(Ambiente::di_sistema);
+            self.assistente = Some(Assistente::new(ambiente)?);
+        }
+        self.assistente
+            .as_mut()
+            .ok_or_else(|| richiesta("assistente non disponibile"))
+    }
+
+    fn gestisci_assistente(&mut self, r: Richiesta) -> Result<Value, ErroreApplicazione> {
+        match r {
+            Richiesta::AssistenteStato {} => self.assistente()?.stato(),
+            Richiesta::AssistenteConfigura { configurazione } => {
+                self.assistente()?.configura(configurazione)
+            }
+            Richiesta::AssistenteChiave { provider, chiave } => self
+                .assistente()?
+                .imposta_chiave(provider, chiave.as_ref().map(assistente::ChiaveApi::valore)),
+            Richiesta::AssistenteConsenso { accetto, versione } => {
+                self.assistente()?.consenso(accetto, versione)
+            }
+            Richiesta::AssistenteIndicizza { prezzario } => {
+                self.aperta()?;
+                let avanzamento = self.avanzamento.take();
+                let r =
+                    self.con_assistente(|a, s| a.indicizza(s, &prezzario, avanzamento.as_ref()));
+                self.avanzamento = avanzamento;
+                r
+            }
+            Richiesta::AssistenteCerca {
+                prezzario,
+                testo,
+                limite,
+                unita,
+            } => self.con_assistente(|a, s| {
+                a.cerca(
+                    s,
+                    &prezzario,
+                    &testo,
+                    limite.unwrap_or(LIMITE_RICERCA),
+                    unita.as_deref(),
+                )
+            }),
+            Richiesta::AssistenteProponi {
+                prezzario,
+                testo,
+                computo,
+            } => self.con_assistente(|a, s| a.proponi(s, &prezzario, &testo, computo.as_deref())),
+            Richiesta::AssistenteApplica {} => {
+                self.aperta()?;
+                let comandi = self.assistente()?.da_applicare()?;
+                Ok(valore(&self.aperta_mut()?.esegui(&comandi)?))
+            }
+            _ => Err(richiesta("richiesta non dell'assistente")),
+        }
+    }
+
+    /// Esegue `f` con l'assistente e la sessione aperta.
+    fn con_assistente(
+        &mut self,
+        f: impl FnOnce(&mut Assistente, &Sessione) -> Result<Value, ErroreApplicazione>,
+    ) -> Result<Value, ErroreApplicazione> {
+        self.assistente()?;
+        let (Some(a), Some(s)) = (self.assistente.as_mut(), self.sessione.as_ref()) else {
+            return Err(richiesta(
+                "nessun progetto aperto: usare `apri`, `nuovo` o `importa`",
+            ));
+        };
+        f(a, s)
     }
 
     /// Sessione aperta.
@@ -353,6 +509,9 @@ impl Servizio {
         }
         self.gzip = percorso.as_deref().is_some_and(compresso);
         self.sessione = Some(s.con_politica(self.politica.clone()));
+        if let Some(a) = self.assistente.as_mut() {
+            a.dimentica_proposta();
+        }
         self.percorso = percorso;
         Ok(())
     }
@@ -552,8 +711,19 @@ impl Servizio {
                 }
                 let chiuso = self.sessione.take().is_some();
                 self.percorso = None;
+                if let Some(a) = self.assistente.as_mut() {
+                    a.dimentica_proposta();
+                }
                 Ok(json!({"chiuso": chiuso}))
             }
+            r @ (Richiesta::AssistenteStato {}
+            | Richiesta::AssistenteConfigura { .. }
+            | Richiesta::AssistenteChiave { .. }
+            | Richiesta::AssistenteConsenso { .. }
+            | Richiesta::AssistenteIndicizza { .. }
+            | Richiesta::AssistenteCerca { .. }
+            | Richiesta::AssistenteProponi { .. }
+            | Richiesta::AssistenteApplica {}) => self.gestisci_assistente(r),
         }
     }
 

@@ -505,3 +505,113 @@ fn cronoprogramma_e_diagramma_di_gantt() {
     let (v, c) = oc(&["report", s(&fixture), "computo", "--gantt"], None);
     assert_ne!(c, 0, "{v}");
 }
+
+/// Esegue il binario con la cartella di configurazione indicata.
+fn oc_config(config: &Path, argomenti: &[&str]) -> (Value, i32, String) {
+    let o = Command::new(env!("CARGO_BIN_EXE_opencomputo"))
+        .args(argomenti)
+        .arg("--compatto")
+        .env("OPENCOMPUTO_CONFIG", config)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let testo = String::from_utf8(o.stdout).unwrap();
+    let v = serde_json::from_str(&testo)
+        .unwrap_or_else(|e| panic!("{e}: {testo:?} {}", String::from_utf8_lossy(&o.stderr)));
+    (
+        v,
+        o.status.code().unwrap(),
+        String::from_utf8_lossy(&o.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn assistente_senza_chiamate_ai() {
+    let d = cartella("assistente");
+    let config = d.join("config");
+    let csv = d.join("prezzario.csv");
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../opencomputo-assistente/tests/fixtures/prezzario_prova.csv"
+        ),
+        &csv,
+    )
+    .unwrap();
+
+    // Testo del consenso, poi accettazione della versione corrente e revoca.
+    let (v, c, _) = oc_config(&config, &["assistente", "consenso"]);
+    assert_eq!(c, 0);
+    assert_eq!(v["risultato"]["valido"], false);
+    assert!(
+        v["risultato"]["testo"]
+            .as_str()
+            .unwrap()
+            .contains("fuori dal tuo computer")
+    );
+    let versione = v["risultato"]["versione_corrente"]
+        .as_u64()
+        .unwrap()
+        .to_string();
+    let (v, c, _) = oc_config(&config, &["assistente", "consenso", "--accetto", "99"]);
+    assert_eq!(
+        (v["errore"]["motivo"].as_str(), c),
+        (Some("consenso_versione"), 4)
+    );
+    let (v, c, _) = oc_config(&config, &["assistente", "consenso", "--accetto", &versione]);
+    assert_eq!((v["risultato"]["valido"].as_bool(), c), (Some(true), 0));
+    assert!(config.join("assistente.json").exists());
+
+    // Configurazione persistente.
+    let (v, c, _) = oc_config(
+        &config,
+        &[
+            "assistente",
+            "configura",
+            "--dimensioni",
+            "256",
+            "--modalita",
+            "json",
+        ],
+    );
+    assert_eq!(c, 0, "{v}");
+    let (v, _, _) = oc_config(&config, &["assistente", "stato"]);
+    assert_eq!(
+        v["risultato"]["configurazione"]["dimensioni_embedding"],
+        256
+    );
+    assert_eq!(v["risultato"]["configurazione"]["modalita_output"], "json");
+    let o = Command::new(env!("CARGO_BIN_EXE_opencomputo"))
+        .args(["assistente", "configura", "--modalita", "boh"])
+        .env("OPENCOMPUTO_CONFIG", &config)
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(2));
+
+    // Ricerca testuale: locale, senza chiave.
+    let (v, c, _) = oc_config(
+        &config,
+        &[
+            "assistente",
+            "cerca",
+            s(&csv),
+            "idropittura",
+            "pareti",
+            "--unita",
+            "m2",
+            "--limite",
+            "3",
+        ],
+    );
+    assert_eq!(c, 0, "{v}");
+    assert_eq!(v["risultato"]["ricerca"], "testuale");
+    assert_eq!(v["risultato"]["voci"][0]["codice"], "T.01");
+
+    // Revocato il consenso, l'indicizzazione è rifiutata prima di leggere le chiavi.
+    oc_config(&config, &["assistente", "consenso", "--revoca"]);
+    let (v, c, _) = oc_config(&config, &["assistente", "indicizza", s(&csv)]);
+    assert_eq!(
+        (v["errore"]["motivo"].as_str(), c),
+        (Some("consenso_mancante"), 4)
+    );
+}

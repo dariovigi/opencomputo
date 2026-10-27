@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/opencomputo-core", "crates/opencomputo-format-xpwe", "crates/opencomputo-dcf-parser", "crates/opencomputo-format-listino", "crates/opencomputo-io", "crates/opencomputo-storage", "crates/opencomputo-application", "crates/opencomputo-assistente", "crates/opencomputo-agent-api", "crates/opencomputo-gui"]
+members = ["crates/opencomputo-core", "crates/opencomputo-format-xpwe", "crates/opencomputo-dcf-parser", "crates/opencomputo-format-listino", "crates/opencomputo-io", "crates/opencomputo-storage", "crates/opencomputo-application", "crates/opencomputo-assistente", "crates/opencomputo-rete", "crates/opencomputo-agent-api", "crates/opencomputo-gui"]
 
 [workspace.package]
 version = "0.1.0"

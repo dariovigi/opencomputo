@@ -16,10 +16,16 @@ opencomputo-application = { path = "../opencomputo-application" }
 opencomputo-core = { path = "../opencomputo-core" }
 opencomputo-storage = { path = "../opencomputo-storage" }
 opencomputo-io = { path = "../opencomputo-io" }
+opencomputo-assistente = { path = "../opencomputo-assistente" }
+opencomputo-rete = { path = "../opencomputo-rete" }
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 clap.workspace = true
+
+[features]
+# Solo per lo sviluppo: chiavi anche da OPENAI_API_KEY e ANTHROPIC_API_KEY.
+chiavi-da-ambiente = ["opencomputo-rete/chiavi-da-ambiente"]
 
 [lints]
 workspace = true
