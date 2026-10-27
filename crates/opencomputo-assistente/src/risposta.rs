@@ -45,13 +45,12 @@ pub struct InformazioneMancante {
     pub lavorazioni: Vec<String>,
 }
 
-/// Risposta della seconda chiamata: scelta delle voci e righi di misura.
+/// Risposta della seconda chiamata: per ogni lavorazione le misure e le voci possibili
+/// in ordine di pertinenza.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RispostaSelezione {
-    /// `completo`, `provvisorio` o `impossibile`.
-    pub esito: String,
-    /// Lavorazioni con la voce scelta.
+    /// Lavorazioni con misure e opzioni.
     pub lavorazioni: Vec<LavorazioneSelezione>,
     /// Ipotesi fatte dal modello.
     pub ipotesi: Vec<IpotesiModello>,
@@ -59,7 +58,7 @@ pub struct RispostaSelezione {
     pub informazioni_mancanti: Vec<InformazioneMancante>,
 }
 
-/// Lavorazione con la voce scelta tra i candidati.
+/// Lavorazione con le misure e le voci possibili.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LavorazioneSelezione {
@@ -67,17 +66,26 @@ pub struct LavorazioneSelezione {
     pub id: String,
     /// Descrizione della lavorazione.
     pub descrizione: String,
-    /// Handle del candidato (`c01`…) oppure `NESSUNO`.
-    pub candidato: String,
-    /// `principale`, `complementare` o `alternativa`.
-    pub ruolo: String,
-    /// Gruppo delle alternative (vuoto se non è un'alternativa).
-    pub gruppo_alternativa: String,
-    /// Lavorazione di cui è complementare (vuoto se non è complementare).
-    pub complementare_di: String,
-    /// Righi di misura.
+    /// `chiara` se la richiesta basta a scegliere la voce, `da_precisare` se manca
+    /// un'informazione (materiale, tipo, spessore…) per scegliere tra le opzioni.
+    pub chiarezza: String,
+    /// Cosa manca per scegliere (vuoto se `chiara`).
+    pub da_precisare: String,
+    /// Righi di misura, comuni a tutte le opzioni.
     pub righe: Vec<RigaModello>,
-    /// Motivo della scelta, in una frase.
+    /// Voci possibili, dalla più alla meno pertinente.
+    pub opzioni: Vec<OpzioneModello>,
+}
+
+/// Voce possibile per una lavorazione.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpzioneModello {
+    /// Handle del candidato (`c01`…).
+    pub candidato: String,
+    /// `alta`, `media` o `bassa`.
+    pub pertinenza: String,
+    /// Perché la voce è adatta, in una frase.
     pub motivazione: String,
 }
 
@@ -101,11 +109,11 @@ pub struct RigaModello {
 pub struct ParametroModello {
     /// Nome (`N`, `L`, `B`, `H`, `D`, `B1`, `B2`, `A`, `V`, `P`).
     pub nome: String,
-    /// Valore decimale con il punto, come testo.
+    /// Valore decimale con il punto, come testo; vuoto se manca.
     pub valore: String,
     /// Unità (`n`, `mm`, `cm`, `m`, `m2`, `m3`, `kg/m`).
     pub unita: String,
-    /// `utente` o `ipotesi`.
+    /// `utente`, `ipotesi` o `mancante`.
     pub provenienza: String,
     /// Identificativo dell'ipotesi (vuoto se fornito dall'utente).
     pub rif_ipotesi: String,

@@ -29,6 +29,15 @@ Prima versione: tutte le fasi di sviluppo 1–6. Dettagli in `docs/STATO.md`.
 
 ### Aggiunto
 
+* **Assistente AI, voci alternative** (ADR 0025, decisioni 29–33): per ogni lavorazione
+  fino a cinque voci in ordine di pertinenza, «Alternative proposte» (la più pertinente
+  spuntata) o «Opzioni possibili» quando manca un'informazione per scegliere; misure
+  modificabili, valori mancanti da completare; quantità e importi di ogni opzione
+  calcolati dal motore e aggiornati a ogni scelta; «Aggiungi al computo» per le voci
+  spuntate, anche più di una per lavorazione, con la proposta che resta aperta per
+  continuare. Molte meno lavorazioni escluse e avvisi: i dettagli della verifica sono
+  raccolti a parte. Richiesta `assistente_anteprima`; `assistente_applica` accetta le
+  `scelte`.
 * **Assistente AI nell'interfaccia** (ADR 0025, fase 4): vista «Assistente AI» con
   consenso, chiavi, modelli, indice dei prezzari con avanzamento e annullamento, e
   proposta con anteprima delle voci (quantità, prezzi e importi calcolati dal motore),

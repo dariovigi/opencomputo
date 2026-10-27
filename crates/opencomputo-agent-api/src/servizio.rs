@@ -19,6 +19,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use opencomputo_assistente::provider::Provider;
+use opencomputo_assistente::scelta::Scelta;
+use opencomputo_assistente::verifica;
 
 use crate::assistente::{
     self, Ambiente, Assistente, Avanzamento, Bisogno, EsitoLavoro, Interruttore, Lavoro, TipoLavoro,
@@ -251,8 +253,19 @@ pub enum Richiesta {
         #[serde(default)]
         computo: Option<String>,
     },
-    /// Assistente AI: esegue i comandi dell'ultima proposta (passo annullabile).
-    AssistenteApplica {},
+    /// Assistente AI: valori di tutte le opzioni dell'ultima proposta con le misure
+    /// indicate, e prova delle opzioni scelte. Il progetto non cambia.
+    AssistenteAnteprima {
+        /// Scelte: per lavorazione, i codici spuntati e le misure corrette.
+        scelte: Vec<Scelta>,
+    },
+    /// Assistente AI: aggiunge al computo le opzioni scelte dell'ultima proposta (un passo
+    /// annullabile). Senza `scelte`, quelle preselezionate. La proposta resta disponibile.
+    AssistenteApplica {
+        /// Scelte.
+        #[serde(default)]
+        scelte: Option<Vec<Scelta>>,
+    },
     /// Assistente AI: stato dell'indice di un prezzario caricato (voci, voci indicizzate,
     /// tipo di ricerca possibile), senza chiamate.
     AssistenteIndice {
@@ -344,7 +357,7 @@ impl Richiesta {
                 | Self::Ripristina {}
                 | Self::CaricaPrezzario { .. }
                 | Self::Chiudi { .. }
-                | Self::AssistenteApplica {}
+                | Self::AssistenteApplica { .. }
         )
     }
 }
@@ -475,10 +488,21 @@ impl Servizio {
             Richiesta::AssistenteConsenso { accetto, versione } => {
                 self.assistente()?.consenso(accetto, versione)
             }
-            Richiesta::AssistenteApplica {} => {
+            Richiesta::AssistenteAnteprima { scelte } => {
                 self.aperta()?;
-                let comandi = self.assistente()?.da_applicare()?;
-                Ok(valore(&self.aperta_mut()?.esegui(&comandi)?))
+                let p = self.assistente()?.proposta()?.clone();
+                Ok(valore(&verifica::anteprima(self.aperta()?, &p, &scelte)?))
+            }
+            Richiesta::AssistenteApplica { scelte } => {
+                self.aperta()?;
+                let p = self.assistente()?.proposta()?.clone();
+                let scelte = scelte.unwrap_or_else(|| p.scelte_predefinite());
+                let (comandi, voci) = verifica::comandi(self.aperta()?, &p, &scelte)?;
+                let mut v = valore(&self.aperta_mut()?.esegui(&comandi)?);
+                if let Value::Object(m) = &mut v {
+                    m.insert("voci".into(), valore(&voci));
+                }
+                Ok(v)
             }
             Richiesta::AssistenteAnnulla {} => {
                 self.interruttore.annulla();
@@ -554,8 +578,8 @@ impl Servizio {
         })
     }
 
-    /// Conclude un lavoro: per le proposte, prova e anteprima sul progetto aperto, e
-    /// proposta conservata per `assistente_applica`.
+    /// Conclude un lavoro: per le proposte, anteprima delle scelte iniziali sul progetto
+    /// aperto, e proposta conservata per `assistente_anteprima` e `assistente_applica`.
     fn concludi(&mut self, e: EsitoLavoro) -> Result<Value, ErroreApplicazione> {
         let mut v = e.risultato?;
         if !e.proposta_attesa {
@@ -568,14 +592,12 @@ impl Servizio {
             ));
         }
         if let Some(p) = &e.proposta {
-            let prova = match opencomputo_assistente::verifica::anteprima(self.aperta()?, p) {
-                Ok(a) => {
-                    json!({"ok": true, "esito": a.esito, "computo": a.computo, "voci": a.voci})
-                }
-                Err(err) => json!({"ok": false, "errore": errore_json(&err)}),
+            let anteprima = match verifica::anteprima(self.aperta()?, p, &p.scelte_predefinite()) {
+                Ok(a) => valore(&a),
+                Err(err) => json!({"errore": errore_json(&err)}),
             };
             if let Value::Object(m) = &mut v {
-                m.insert("prova".into(), prova);
+                m.insert("anteprima".into(), anteprima);
             }
         }
         self.assistente()?.conserva_proposta(e.proposta);
@@ -874,7 +896,8 @@ impl Servizio {
             | Richiesta::AssistenteIndicizza { .. }
             | Richiesta::AssistenteCerca { .. }
             | Richiesta::AssistenteProponi { .. }
-            | Richiesta::AssistenteApplica {}
+            | Richiesta::AssistenteApplica { .. }
+            | Richiesta::AssistenteAnteprima { .. }
             | Richiesta::AssistenteIndice { .. }
             | Richiesta::AssistenteAnnulla {}) => self.gestisci_assistente(r),
         }

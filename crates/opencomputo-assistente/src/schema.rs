@@ -34,10 +34,12 @@ pub const DIMENSIONI_ATTESE: [&str; 7] = [
     "a_corpo",
     "qualsiasi",
 ];
-/// Pattern dei valori decimali.
-pub const PATTERN_VALORE: &str = "^[0-9]+([.][0-9]+)?$";
+/// Pattern dei valori decimali (vuoto se il valore manca).
+pub const PATTERN_VALORE: &str = "^([0-9]+([.][0-9]+)?)?$";
 /// Pattern degli handle dei candidati.
-pub const PATTERN_CANDIDATO: &str = "^(c[0-9]{2}|NESSUNO)$";
+pub const PATTERN_CANDIDATO: &str = "^c[0-9]{2}$";
+/// Opzioni al massimo per lavorazione.
+pub const OPZIONI_MASSIME: usize = 5;
 /// Pattern degli identificativi delle lavorazioni.
 pub const PATTERN_LAVORAZIONE: &str = "^L[0-9]{2}$";
 /// Pattern degli identificativi delle ipotesi.
@@ -128,14 +130,14 @@ pub fn schema_selezione() -> Value {
         ("nome", scelta(&PARAMETRI, "Parametro della forma")),
         (
             "valore",
-            json!({"type": "string", "pattern": PATTERN_VALORE, "description": "Numero con il punto decimale"}),
+            json!({"type": "string", "pattern": PATTERN_VALORE, "description": "Numero con il punto decimale; vuoto se il valore manca"}),
         ),
         ("unita", scelta(&UNITA, "Unità del valore")),
         (
             "provenienza",
             scelta(
-                &["utente", "ipotesi"],
-                "utente solo se il valore è scritto nella richiesta",
+                &["utente", "ipotesi", "mancante"],
+                "utente solo se il valore è scritto nella richiesta; mancante se non è indicato e non è ragionevole ipotizzarlo",
             ),
         ),
         (
@@ -155,14 +157,24 @@ pub fn schema_selezione() -> Value {
         ),
         ("parametri", elenco(parametro)),
     ]);
-    oggetto(&[
+    let opzione = oggetto(&[
         (
-            "esito",
+            "candidato",
+            json!({"type": "string", "pattern": PATTERN_CANDIDATO, "description": "Handle di un candidato fornito"}),
+        ),
+        (
+            "pertinenza",
             scelta(
-                &["completo", "provvisorio", "impossibile"],
-                "Esito complessivo",
+                &["alta", "media", "bassa"],
+                "Quanto la voce corrisponde alla lavorazione",
             ),
         ),
+        (
+            "motivazione",
+            testo("Perché la voce è adatta, in una frase breve"),
+        ),
+    ]);
+    oggetto(&[
         (
             "lavorazioni",
             elenco(oggetto(&[
@@ -172,29 +184,18 @@ pub fn schema_selezione() -> Value {
                 ),
                 ("descrizione", testo("Lavorazione")),
                 (
-                    "candidato",
-                    json!({"type": "string", "pattern": PATTERN_CANDIDATO, "description": "Handle di un candidato fornito, oppure NESSUNO"}),
-                ),
-                (
-                    "ruolo",
+                    "chiarezza",
                     scelta(
-                        &["principale", "complementare", "alternativa"],
-                        "Ruolo della lavorazione",
+                        &["chiara", "da_precisare"],
+                        "da_precisare se manca un'informazione per scegliere tra le voci",
                     ),
                 ),
                 (
-                    "gruppo_alternativa",
-                    testo("Nome comune alle alternative tra cui scegliere, altrimenti vuoto"),
-                ),
-                (
-                    "complementare_di",
-                    testo("Identificativo della lavorazione principale, altrimenti vuoto"),
+                    "da_precisare",
+                    testo("Cosa manca per scegliere la voce (vuoto se chiara)"),
                 ),
                 ("righe", elenco(riga)),
-                (
-                    "motivazione",
-                    testo("Motivo della scelta, in una frase breve"),
-                ),
+                ("opzioni", elenco(opzione)),
             ])),
         ),
         (
@@ -236,7 +237,7 @@ pub fn strumento_analisi() -> Value {
 pub fn strumento_selezione() -> Value {
     strumento(
         STRUMENTO_SELEZIONE,
-        "Registra per ogni lavorazione il candidato scelto, i righi di misura, le ipotesi e le informazioni mancanti.",
+        "Registra per ogni lavorazione i righi di misura e le voci possibili in ordine di pertinenza, le ipotesi e le informazioni mancanti.",
         schema_selezione(),
     )
 }
@@ -311,15 +312,14 @@ mod test {
         .unwrap();
         assert_eq!(a.lavorazioni.len(), 1);
         let s: RispostaSelezione = serde_json::from_value(json!({
-            "esito": "completo",
             "lavorazioni": [{
-                "id": "L01", "descrizione": "Massetto", "candidato": "c01", "ruolo": "principale",
-                "gruppo_alternativa": "", "complementare_di": "", "motivazione": "voce del capitolo massetti",
+                "id": "L01", "descrizione": "Massetto", "chiarezza": "chiara", "da_precisare": "",
                 "righe": [{"descrizione": "soggiorno", "forma": "rettangolo", "segno": "positivo", "parametri": [
                     {"nome": "N", "valore": "1", "unita": "n", "provenienza": "utente", "rif_ipotesi": ""},
                     {"nome": "L", "valore": "5", "unita": "m", "provenienza": "utente", "rif_ipotesi": ""},
-                    {"nome": "B", "valore": "4", "unita": "m", "provenienza": "utente", "rif_ipotesi": ""}
-                ]}]
+                    {"nome": "B", "valore": "", "unita": "m", "provenienza": "mancante", "rif_ipotesi": ""}
+                ]}],
+                "opzioni": [{"candidato": "c01", "pertinenza": "alta", "motivazione": "voce del capitolo massetti"}]
             }],
             "ipotesi": [],
             "informazioni_mancanti": []

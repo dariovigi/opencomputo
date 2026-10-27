@@ -1,41 +1,40 @@
-//! Validazione della risposta di selezione e traduzione in comandi (ADR 0025).
+//! Validazione della risposta di selezione (ADR 0025).
 //!
-//! La risposta del modello non modifica nulla: diventa una [`Proposta`] con
+//! La risposta del modello non modifica nulla: diventa una [`Proposta`] in cui ogni
+//! lavorazione ha
 //!
-//! * le lavorazioni accettate, ciascuna legata alla voce del prezzario, con forma,
-//!   parametri (valore dato, unità, valore in unità base) e provenienza di ogni valore;
-//! * le lavorazioni escluse, con il motivo;
-//! * ipotesi, informazioni mancanti, avvisi con codici stabili;
-//! * i [`Comando`] da eseguire: `copia_da_prezzario` per le voci che mancano
-//!   nell'elenco prezzi, poi un `aggiungi_voce_computo` per lavorazione.
+//! * i righi di misura, comuni alle sue voci possibili, con forma, parametri e
+//!   provenienza di ogni valore (dalla richiesta, ipotesi, da completare);
+//! * le **opzioni**: fino a [`OPZIONI_MASSIME`] voci del prezzario, dalla più alla meno
+//!   pertinente; per le lavorazioni chiare la prima è preselezionata, per quelle da
+//!   precisare (manca il materiale, il tipo…) la scelta è dell'utente.
 //!
-//! Controlli, oltre a quelli dello schema:
+//! I comandi non sono decisi qui: li costruisce [`crate::scelta`] dalle voci spuntate e
+//! dalle misure, eventualmente corrette, dall'utente.
+//!
+//! La validazione scarta il meno possibile: un valore non valido diventa «da
+//! completare», un'opzione incoerente è tolta, e una lavorazione è senza voce solo se non
+//! resta nessuna opzione. Controlli, oltre a quelli dello schema:
 //!
 //! | Codice | Effetto | Quando |
 //! |---|---|---|
-//! | `candidato_inesistente` | lavorazione esclusa | handle non inviato in questa richiesta |
-//! | `voce_non_trovata` | lavorazione esclusa (avviso) | il modello risponde `NESSUNO` |
-//! | `unita_non_supportata` | esclusa | unità della voce senza forma corrispondente |
-//! | `unita_incompatibile` | esclusa | la forma dà una grandezza diversa dall'unità della voce |
-//! | `parametri_errati` | esclusa | parametri mancanti, in più, ripetuti, unità non ammessa |
-//! | `valore_non_valido` | esclusa | valore non numerico, zero, N non intero |
-//! | `ipotesi_inesistente` | esclusa | `rif_ipotesi` che non esiste |
-//! | `ruolo_incoerente` | esclusa | campi di ruolo in contrasto con il ruolo |
-//! | `righe_assenti` | esclusa | nessun rigo |
-//! | `duplicato` | esclusa | stessa voce e stessi righi di una lavorazione precedente |
-//! | `valore_non_fondato` | avviso, valore reso ipotesi | «utente» ma assente dalla richiesta |
-//! | `possibile_doppio_conteggio` | avviso | stessa voce in più lavorazioni con righi diversi |
-//! | `alternativa_non_inclusa` | informazione | alternativa dopo la prima del suo gruppo |
-//! | `complementare_senza_principale` | avviso | `complementare_di` non è una lavorazione accettata |
-//! | `prezzo_elenco_diverso` | avviso | la voce è già nell'elenco con un altro prezzo |
+//! | `candidato_inesistente` | opzione tolta | handle non inviato in questa richiesta |
+//! | `opzione_ripetuta` | opzione tolta | stesso candidato due volte nella lavorazione |
+//! | `unita_incompatibile` | opzione tolta | l'unità della voce misura una grandezza diversa dai righi |
+//! | `misura_manuale` | opzione con rigo da completare | unità della voce senza forma di misura (h, m²/mese…) |
+//! | `rigo_scartato` | rigo tolto | forma o segno sconosciuti, grandezza diversa dagli altri righi |
+//! | `parametro_scartato` | parametro ignorato | parametro sconosciuto, ripetuto o non della forma |
+//! | `valore_da_completare` | valore da completare | valore non numerico, zero, N non intero, unità non ammessa |
+//! | `ipotesi_inesistente` | ipotesi creata | `rif_ipotesi` che non esiste |
+//! | `valore_non_fondato` | valore reso ipotesi (avviso) | «utente» ma assente dalla richiesta |
+//! | `prezzo_elenco_diverso` | informazione | la voce è già nell'elenco con un altro prezzo |
 //!
-//! L'esito è `completo` solo se il modello lo dichiara e non ci sono esclusioni, avvisi,
-//! ipotesi né informazioni mancanti; `impossibile` se nessuna lavorazione è accettata;
-//! altrimenti `provvisorio`.
+//! Gli avvisi di gravità «informazione» sono dettagli della verifica; solo
+//! `valore_non_fondato` è un avviso da guardare.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
-use opencomputo_application::{Comando, NuovoRigo};
+use opencomputo_core::numeri::Prezzo;
 use opencomputo_core::prezzario::Prezzario;
 use opencomputo_core::progetto::Progetto;
 use opencomputo_core::validazione::Gravita;
@@ -44,36 +43,40 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::candidati::Candidati;
-use crate::forme::{Forma, Parametro, rigo};
+use crate::forme::{Forma, Parametro};
 use crate::risposta::{InformazioneMancante, RispostaSelezione};
+use crate::scelta::Scelta;
 use crate::unita::{Dimensione, riconosci};
 use crate::valori::{UnitaValore, ValoreFondato, estrai};
 
-/// Lunghezza massima delle note scritte nella voce di computo, in caratteri.
-const NOTA_MASSIMA: usize = 1000;
+pub use crate::schema::OPZIONI_MASSIME;
+
+/// Caratteri della descrizione estesa riportata in ogni opzione.
+const DESCRIZIONE_ESTESA: usize = 600;
 
 /// Esito della proposta.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EsitoProposta {
-    /// Nessun problema noto.
+    /// Tutte le lavorazioni chiare, misure complete e fondate.
     Completo,
-    /// Da rivedere: esclusioni, ipotesi, avvisi o informazioni mancanti.
-    Provvisorio,
-    /// Nessuna lavorazione accettata.
-    Impossibile,
+    /// Da guardare: lavorazioni da precisare, ipotesi, valori da completare, avvisi o
+    /// lavorazioni senza voce.
+    DaRivedere,
+    /// Nessuna lavorazione con voci possibili.
+    Vuoto,
 }
 
-/// Ruolo di una lavorazione.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Pertinenza di un'opzione.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Ruolo {
-    /// Lavorazione principale.
-    Principale,
-    /// Complementare a un'altra lavorazione.
-    Complementare,
-    /// Una tra più alternative.
-    Alternativa,
+pub enum Pertinenza {
+    /// Alta.
+    Alta,
+    /// Media.
+    Media,
+    /// Bassa.
+    Bassa,
 }
 
 /// Impatto di un'ipotesi.
@@ -102,24 +105,24 @@ pub enum ProvenienzaValore {
         /// Identificativo dell'ipotesi.
         id: String,
     },
+    /// Non indicato: da completare.
+    Mancante,
 }
 
-/// Parametro accettato.
+/// Parametro di un rigo.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParametroProposto {
     /// Parametro.
     pub nome: Parametro,
-    /// Valore come indicato.
-    pub valore: Decimal,
-    /// Unità indicata.
+    /// Valore come indicato (assente se da completare).
+    pub valore: Option<Decimal>,
+    /// Unità del valore.
     pub unita: UnitaValore,
-    /// Valore nell'unità base (m, m², kg/m, numero).
-    pub valore_base: Decimal,
     /// Provenienza.
     pub provenienza: ProvenienzaValore,
 }
 
-/// Rigo accettato.
+/// Rigo di misura.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RigaProposta {
     /// Descrizione.
@@ -128,48 +131,81 @@ pub struct RigaProposta {
     pub forma: Forma,
     /// Rigo in deduzione.
     pub deduzione: bool,
-    /// Parametri, nell'ordine della forma.
+    /// Parametri, nell'ordine della forma (tutti presenti, eventualmente senza valore).
     pub parametri: Vec<ParametroProposto>,
 }
 
-/// Lavorazione accettata.
+impl RigaProposta {
+    /// `true` se manca almeno un valore.
+    #[must_use]
+    pub fn da_completare(&self) -> bool {
+        self.parametri.iter().any(|p| p.valore.is_none())
+    }
+}
+
+/// Voce possibile per una lavorazione.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Opzione {
+    /// Handle del candidato.
+    pub handle: String,
+    /// Codice della voce.
+    pub codice: String,
+    /// Descrizione breve (o l'inizio dell'estesa).
+    pub descrizione: String,
+    /// Descrizione estesa, accorciata.
+    pub descrizione_estesa: String,
+    /// Unità di misura della voce.
+    pub unita_misura: String,
+    /// Prezzo che verrà applicato: quello dell'elenco prezzi se la voce c'è già.
+    pub prezzo: Prezzo,
+    /// Prezzo del prezzario, se diverso da quello dell'elenco.
+    pub prezzo_prezzario: Option<Prezzo>,
+    /// Pertinenza secondo il modello.
+    pub pertinenza: Pertinenza,
+    /// Motivazione del modello.
+    pub motivazione: String,
+    /// L'unità della voce non ha forme di misura: entra con un rigo da completare.
+    pub misura_manuale: bool,
+    /// Proposta come scelta iniziale.
+    pub preselezionata: bool,
+}
+
+/// Lavorazione con misure e opzioni.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LavorazioneProposta {
     /// Identificativo.
     pub id: String,
     /// Descrizione.
     pub descrizione: String,
-    /// Ruolo.
-    pub ruolo: Ruolo,
-    /// Gruppo delle alternative.
-    pub gruppo_alternativa: Option<String>,
-    /// Lavorazione di cui è complementare.
-    pub complementare_di: Option<String>,
-    /// Handle scelto.
-    pub handle: String,
-    /// Codice della voce.
-    pub codice: String,
-    /// Unità di misura della voce.
-    pub unita_misura: String,
-    /// Righi.
+    /// `true` se la richiesta basta a scegliere la voce.
+    pub chiara: bool,
+    /// Cosa manca per scegliere (vuoto se chiara).
+    pub da_precisare: String,
+    /// Righi di misura, comuni alle opzioni.
     pub righe: Vec<RigaProposta>,
-    /// Ipotesi usate dai parametri.
+    /// Voci possibili, dalla più alla meno pertinente.
+    pub opzioni: Vec<Opzione>,
+    /// Ipotesi usate dai valori.
     pub ipotesi: Vec<String>,
-    /// Motivazione del modello.
-    pub motivazione: String,
-    /// `false` per le alternative non scelte: non entrano nei comandi.
-    pub inclusa: bool,
 }
 
-/// Lavorazione esclusa.
+impl LavorazioneProposta {
+    /// `true` se qualche valore delle misure è da completare.
+    #[must_use]
+    pub fn da_completare(&self) -> bool {
+        self.righe.iter().any(RigaProposta::da_completare)
+    }
+}
+
+/// Lavorazione senza voci possibili nel prezzario.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LavorazioneEsclusa {
+pub struct LavorazioneSenzaVoce {
     /// Identificativo.
     pub id: String,
     /// Descrizione.
     pub descrizione: String,
-    /// Motivi.
-    pub motivi: Vec<String>,
+    /// Motivo.
+    pub motivo: String,
 }
 
 /// Ipotesi.
@@ -181,7 +217,7 @@ pub struct Ipotesi {
     pub testo: String,
     /// Impatto.
     pub impatto: Impatto,
-    /// `true` se creata dalla validazione (valore dichiarato fornito ma non trovato).
+    /// `true` se creata dalla validazione.
     pub dalla_validazione: bool,
 }
 
@@ -203,22 +239,53 @@ pub struct Avviso {
 pub struct Proposta {
     /// Esito deciso dalla validazione.
     pub esito: EsitoProposta,
-    /// Esito dichiarato dal modello.
-    pub esito_modello: String,
-    /// Lavorazioni accettate.
+    /// Nome con cui il prezzario è caricato nella sessione.
+    pub nome_prezzario: String,
+    /// Computo di destinazione.
+    pub computo: Option<String>,
+    /// Lavorazioni con voci possibili.
     pub lavorazioni: Vec<LavorazioneProposta>,
-    /// Lavorazioni escluse.
-    pub escluse: Vec<LavorazioneEsclusa>,
+    /// Lavorazioni senza voci possibili.
+    pub senza_voce: Vec<LavorazioneSenzaVoce>,
     /// Ipotesi.
     pub ipotesi: Vec<Ipotesi>,
     /// Informazioni mancanti.
     pub informazioni_mancanti: Vec<InformazioneMancante>,
-    /// Avvisi.
+    /// Avvisi e dettagli della verifica.
     pub avvisi: Vec<Avviso>,
     /// Valori trovati nella richiesta.
     pub valori_fondati: Vec<ValoreFondato>,
-    /// Comandi da provare ed eseguire.
-    pub comandi: Vec<Comando>,
+}
+
+impl Proposta {
+    /// Scelte iniziali: le opzioni preselezionate, con le misure della proposta.
+    #[must_use]
+    pub fn scelte_predefinite(&self) -> Vec<Scelta> {
+        self.lavorazioni
+            .iter()
+            .filter_map(|l| {
+                let codici: Vec<String> = l
+                    .opzioni
+                    .iter()
+                    .filter(|o| o.preselezionata)
+                    .map(|o| o.codice.clone())
+                    .collect();
+                (!codici.is_empty()).then(|| Scelta {
+                    lavorazione: l.id.clone(),
+                    codici,
+                    misure: None,
+                })
+            })
+            .collect()
+    }
+
+    /// Lavorazione per identificativo.
+    #[must_use]
+    pub fn lavorazione(&self, id: &str) -> Option<&LavorazioneProposta> {
+        self.lavorazioni
+            .iter()
+            .find(|l| l.id.eq_ignore_ascii_case(id.trim()))
+    }
 }
 
 /// Contesto della validazione.
@@ -256,12 +323,6 @@ pub enum ErroreRisposta {
         /// Identificativo.
         id: String,
     },
-    /// Esito sconosciuto.
-    #[error("esito «{esito}» sconosciuto")]
-    EsitoSconosciuto {
-        /// Esito.
-        esito: String,
-    },
 }
 
 /// Legge una risposta di selezione dal JSON dello strumento.
@@ -275,7 +336,7 @@ pub fn leggi_selezione(json: &serde_json::Value) -> Result<RispostaSelezione, Er
 }
 
 /// Valore di un elenco chiuso, senza distinzione di maiuscole.
-fn scegli<T: Copy>(testo: &str, valori: &[(&str, T)]) -> Option<T> {
+pub(crate) fn scegli<T: Copy>(testo: &str, valori: &[(&str, T)]) -> Option<T> {
     let t = testo.trim();
     valori
         .iter()
@@ -290,7 +351,7 @@ fn forma(testo: &str) -> Option<Forma> {
         .find(|f| f.nome().eq_ignore_ascii_case(t))
 }
 
-const PARAMETRI: [(&str, Parametro); 10] = [
+pub(crate) const PARAMETRI: [(&str, Parametro); 10] = [
     ("N", Parametro::N),
     ("L", Parametro::L),
     ("B", Parametro::B),
@@ -303,7 +364,7 @@ const PARAMETRI: [(&str, Parametro); 10] = [
     ("P", Parametro::P),
 ];
 
-const UNITA: [(&str, UnitaValore); 7] = [
+pub(crate) const UNITA: [(&str, UnitaValore); 7] = [
     ("n", UnitaValore::N),
     ("mm", UnitaValore::Mm),
     ("cm", UnitaValore::Cm),
@@ -312,6 +373,24 @@ const UNITA: [(&str, UnitaValore); 7] = [
     ("m3", UnitaValore::M3),
     ("kg/m", UnitaValore::KgM),
 ];
+
+/// Unità predefinita di un parametro (quando quella indicata non è ammessa).
+fn unita_predefinita(p: Parametro) -> UnitaValore {
+    p.unita_ammesse()
+        .iter()
+        .copied()
+        .find(|u| {
+            matches!(
+                u,
+                UnitaValore::M
+                    | UnitaValore::N
+                    | UnitaValore::M2
+                    | UnitaValore::M3
+                    | UnitaValore::KgM
+            )
+        })
+        .unwrap_or(UnitaValore::M)
+}
 
 fn avviso(gravita: Gravita, codice: &str, messaggio: String, lavorazione: Option<&str>) -> Avviso {
     Avviso {
@@ -322,7 +401,7 @@ fn avviso(gravita: Gravita, codice: &str, messaggio: String, lavorazione: Option
     }
 }
 
-fn tronca(testo: &str, massimo: usize) -> String {
+pub(crate) fn tronca(testo: &str, massimo: usize) -> String {
     if testo.chars().count() <= massimo {
         return testo.to_owned();
     }
@@ -331,199 +410,132 @@ fn tronca(testo: &str, massimo: usize) -> String {
     t
 }
 
-/// Lavorazione accettata con i righi per il comando.
-struct Accettata {
-    proposta: LavorazioneProposta,
-    righi: Vec<NuovoRigo>,
+/// Valori della validazione condivisi tra le lavorazioni.
+struct Stato<'a> {
+    ctx: &'a Contesto<'a>,
+    fondati: Vec<ValoreFondato>,
+    ipotesi_modello: BTreeSet<String>,
+    ipotesi: Vec<Ipotesi>,
+    avvisi: Vec<Avviso>,
 }
 
-/// Controlla una lavorazione. Restituisce i motivi di esclusione se non è accettabile.
-#[allow(clippy::too_many_lines)]
-fn controlla(
-    l: &crate::risposta::LavorazioneSelezione,
-    risposta: &RispostaSelezione,
-    ctx: &Contesto<'_>,
-    fondati: &[ValoreFondato],
-    ipotesi: &mut Vec<Ipotesi>,
-    avvisi: &mut Vec<Avviso>,
-) -> Result<Accettata, Vec<(String, String)>> {
-    let mut errori: Vec<(String, String)> = Vec::new();
-    let id = l.id.trim();
-    let ruolo = scegli(
-        &l.ruolo,
-        &[
-            ("principale", Ruolo::Principale),
-            ("complementare", Ruolo::Complementare),
-            ("alternativa", Ruolo::Alternativa),
-        ],
-    );
-    let gruppo = l.gruppo_alternativa.trim();
-    let di = l.complementare_di.trim();
-    match ruolo {
-        None => errori.push((
-            "ruolo_incoerente".into(),
-            format!("ruolo «{}» sconosciuto", l.ruolo),
-        )),
-        Some(Ruolo::Principale) if !gruppo.is_empty() || !di.is_empty() => errori.push((
-            "ruolo_incoerente".into(),
-            "una lavorazione principale non ha gruppo di alternative né lavorazione principale"
-                .into(),
-        )),
-        Some(Ruolo::Complementare)
-            if di.is_empty() || !gruppo.is_empty() || di.eq_ignore_ascii_case(id) =>
-        {
-            errori.push((
-                "ruolo_incoerente".into(),
-                "una lavorazione complementare indica la sua principale e non ha gruppo di alternative".into(),
-            ));
-        }
-        Some(Ruolo::Alternativa) if gruppo.is_empty() || !di.is_empty() => errori.push((
-            "ruolo_incoerente".into(),
-            "un'alternativa indica il suo gruppo e non è complementare".into(),
-        )),
-        _ => {}
+impl Stato<'_> {
+    fn nuova_ipotesi(&mut self, testo: String, impatto: Impatto) -> String {
+        let id = format!(
+            "R{:02}",
+            self.ipotesi.iter().filter(|i| i.dalla_validazione).count() + 1
+        );
+        self.ipotesi.push(Ipotesi {
+            id: id.clone(),
+            testo,
+            impatto,
+            dalla_validazione: true,
+        });
+        id
     }
-    let Some(candidato) = ctx.candidati.per_handle(&l.candidato) else {
-        errori.push((
-            "candidato_inesistente".into(),
-            format!("il candidato «{}» non è tra quelli inviati", l.candidato),
-        ));
-        return Err(errori);
-    };
-    // La voce che entrerà nel computo è quella dell'elenco prezzi, se c'è già.
-    let voce = ctx
-        .progetto
-        .elenco_prezzi
-        .voce_per_codice(&candidato.codice)
-        .or_else(|| ctx.prezzario.voce_per_codice(&candidato.codice));
-    let Some(voce) = voce else {
-        errori.push((
-            "candidato_inesistente".into(),
-            format!("la voce «{}» non è più nel prezzario", candidato.codice),
-        ));
-        return Err(errori);
-    };
-    let unita_voce = riconosci(&voce.unita_misura);
-    if Forma::per_dimensione(unita_voce.dimensione).is_empty() {
-        errori.push((
-            "unita_non_supportata".into(),
-            format!(
-                "l'unità «{}» della voce {} non ha una forma di misura: va misurata a mano",
-                voce.unita_misura, voce.codice
-            ),
-        ));
-    }
-    if l.righe.is_empty() {
-        errori.push(("righe_assenti".into(), "nessun rigo di misura".into()));
-    }
-    let ipotesi_modello: BTreeSet<String> = risposta
-        .ipotesi
-        .iter()
-        .map(|i| i.id.trim().to_uppercase())
-        .collect();
 
-    let mut righe = Vec::new();
-    let mut righi = Vec::new();
-    let mut usate: BTreeSet<String> = BTreeSet::new();
-    // Ipotesi e avvisi dei valori non fondati: registrati solo se la lavorazione è
-    // accettata, così una lavorazione esclusa non lascia ipotesi orfane.
-    let mut nuove_ipotesi: Vec<Ipotesi> = Vec::new();
-    let mut nuovi_avvisi: Vec<Avviso> = Vec::new();
-    for (n, r) in l.righe.iter().enumerate() {
-        let nr = n + 1;
-        let Some(f) = forma(&r.forma) else {
-            errori.push((
-                "parametri_errati".into(),
-                format!("rigo {nr}: forma «{}» sconosciuta", r.forma),
-            ));
-            continue;
-        };
-        if unita_voce.dimensione != Dimensione::Sconosciuta
-            && !Forma::per_dimensione(unita_voce.dimensione).is_empty()
-            && f.dimensione() != unita_voce.dimensione
-        {
-            errori.push((
-                "unita_incompatibile".into(),
-                format!(
-                    "rigo {nr}: la forma «{}» misura {}, la voce {} è in «{}» ({})",
-                    f.nome(),
-                    f.dimensione().nome(),
-                    voce.codice,
-                    voce.unita_misura,
-                    unita_voce.dimensione.nome()
-                ),
-            ));
-        }
-        let deduzione = match scegli(&r.segno, &[("positivo", false), ("detrazione", true)]) {
-            Some(d) => d,
-            None => {
-                errori.push((
-                    "parametri_errati".into(),
-                    format!("rigo {nr}: segno «{}» sconosciuto", r.segno),
-                ));
-                false
-            }
-        };
-        let mut valori: BTreeMap<Parametro, Decimal> = BTreeMap::new();
-        let mut parametri = Vec::new();
-        for p in &r.parametri {
-            let Some(nome) = scegli(&p.nome, &PARAMETRI) else {
-                errori.push((
-                    "parametri_errati".into(),
-                    format!("rigo {nr}: parametro «{}» sconosciuto", p.nome),
+    /// Righi della lavorazione: i righi non utilizzabili sono tolti, i valori non validi
+    /// diventano da completare.
+    #[allow(clippy::too_many_lines)]
+    fn righe(&mut self, l: &crate::risposta::LavorazioneSelezione) -> Vec<RigaProposta> {
+        let id = l.id.trim().to_uppercase();
+        let mut righe: Vec<RigaProposta> = Vec::new();
+        for (n, r) in l.righe.iter().enumerate() {
+            let nr = n + 1;
+            let Some(f) = forma(&r.forma) else {
+                self.avvisi.push(avviso(
+                    Gravita::Informazione,
+                    "rigo_scartato",
+                    format!("rigo {nr}: forma «{}» sconosciuta", r.forma),
+                    Some(&id),
                 ));
                 continue;
             };
-            if valori.contains_key(&nome) {
-                errori.push((
-                    "parametri_errati".into(),
-                    format!("rigo {nr}: parametro {nome:?} ripetuto"),
-                ));
-                continue;
-            }
-            let Some(unita) = scegli(&p.unita, &UNITA) else {
-                errori.push((
-                    "parametri_errati".into(),
-                    format!("rigo {nr}: unità «{}» sconosciuta", p.unita),
-                ));
-                continue;
-            };
-            if !nome.unita_ammesse().contains(&unita) {
-                errori.push((
-                    "parametri_errati".into(),
-                    format!("rigo {nr}: unità «{}» non ammessa per {nome:?}", p.unita),
-                ));
-                continue;
-            }
-            let valore = match Decimal::from_str_exact(p.valore.trim()) {
-                Ok(v) if v > Decimal::ZERO => v,
-                Ok(_) => {
-                    errori.push((
-                        "valore_non_valido".into(),
-                        format!("rigo {nr}: {nome:?} vale zero"),
-                    ));
-                    continue;
-                }
-                Err(_) => {
-                    errori.push((
-                        "valore_non_valido".into(),
-                        format!("rigo {nr}: valore «{}» di {nome:?} non numerico", p.valore),
-                    ));
-                    continue;
-                }
-            };
-            if nome == Parametro::N && valore.fract() != Decimal::ZERO {
-                errori.push((
-                    "valore_non_valido".into(),
-                    format!("rigo {nr}: N deve essere intero ({valore})"),
-                ));
-                continue;
-            }
-            let provenienza = match scegli(&p.provenienza, &[("utente", true), ("ipotesi", false)])
+            if let Some(prima) = righe.first()
+                && prima.forma.dimensione() != f.dimensione()
             {
-                Some(true) => {
-                    let trovato = fondati.iter().find(|v| v.corrisponde(valore, unita));
-                    match trovato {
+                self.avvisi.push(avviso(
+                    Gravita::Informazione,
+                    "rigo_scartato",
+                    format!(
+                        "rigo {nr}: la forma «{}» misura {}, i righi precedenti {}",
+                        f.nome(),
+                        f.dimensione().nome(),
+                        prima.forma.dimensione().nome()
+                    ),
+                    Some(&id),
+                ));
+                continue;
+            }
+            let Some(deduzione) = scegli(&r.segno, &[("positivo", false), ("detrazione", true)])
+            else {
+                self.avvisi.push(avviso(
+                    Gravita::Informazione,
+                    "rigo_scartato",
+                    format!("rigo {nr}: segno «{}» sconosciuto", r.segno),
+                    Some(&id),
+                ));
+                continue;
+            };
+            let mut parametri: Vec<ParametroProposto> = Vec::new();
+            for p in &r.parametri {
+                let Some(nome) = scegli(&p.nome, &PARAMETRI) else {
+                    self.avvisi.push(avviso(
+                        Gravita::Informazione,
+                        "parametro_scartato",
+                        format!("rigo {nr}: parametro «{}» sconosciuto", p.nome),
+                        Some(&id),
+                    ));
+                    continue;
+                };
+                if !f.parametri().contains(&nome) || parametri.iter().any(|x| x.nome == nome) {
+                    self.avvisi.push(avviso(
+                        Gravita::Informazione,
+                        "parametro_scartato",
+                        format!(
+                            "rigo {nr}: {nome:?} ripetuto o non previsto dalla forma «{}»",
+                            f.nome()
+                        ),
+                        Some(&id),
+                    ));
+                    continue;
+                }
+                let unita = scegli(&p.unita, &UNITA).filter(|u| nome.unita_ammesse().contains(u));
+                let testo = p.valore.trim();
+                let mancante =
+                    scegli(&p.provenienza, &[("mancante", ())]).is_some() || testo.is_empty();
+                let valore = match (Decimal::from_str_exact(testo), unita) {
+                    (Ok(v), Some(_))
+                        if v > Decimal::ZERO
+                            && (nome != Parametro::N || v.fract() == Decimal::ZERO) =>
+                    {
+                        Some(v)
+                    }
+                    _ => None,
+                };
+                let unita = unita.unwrap_or_else(|| unita_predefinita(nome));
+                let Some(valore) = valore.filter(|_| !mancante) else {
+                    if !mancante {
+                        self.avvisi.push(avviso(
+                            Gravita::Informazione,
+                            "valore_da_completare",
+                            format!(
+                                "rigo {nr}: valore «{}» {} di {nome:?} non utilizzabile: da completare",
+                                p.valore, p.unita
+                            ),
+                            Some(&id),
+                        ));
+                    }
+                    parametri.push(ParametroProposto {
+                        nome,
+                        valore: None,
+                        unita,
+                        provenienza: ProvenienzaValore::Mancante,
+                    });
+                    continue;
+                };
+                let provenienza = if scegli(&p.provenienza, &[("utente", ())]).is_some() {
+                    match self.fondati.iter().find(|v| v.corrisponde(valore, unita)) {
                         Some(v) => ProvenienzaValore::Utente {
                             testo: v.testo.clone(),
                         },
@@ -533,176 +545,205 @@ fn controlla(
                             }
                         }
                         None => {
-                            let nuovo = format!(
-                                "R{:02}",
-                                ipotesi.iter().filter(|i| i.dalla_validazione).count()
-                                    + nuove_ipotesi.len()
-                                    + 1
-                            );
                             let testo = format!(
                                 "{nome:?} = {valore} {} (lavorazione {id}, rigo {nr}) indicato come dato dell'utente, ma la richiesta non lo contiene",
                                 p.unita
                             );
-                            nuovi_avvisi.push(avviso(
+                            self.avvisi.push(avviso(
                                 Gravita::Avviso,
                                 "valore_non_fondato",
                                 testo.clone(),
-                                Some(id),
+                                Some(&id),
                             ));
-                            nuove_ipotesi.push(Ipotesi {
-                                id: nuovo.clone(),
-                                testo,
-                                impatto: Impatto::Alto,
-                                dalla_validazione: true,
-                            });
-                            ProvenienzaValore::Ipotesi { id: nuovo }
+                            ProvenienzaValore::Ipotesi {
+                                id: self.nuova_ipotesi(testo, Impatto::Alto),
+                            }
                         }
                     }
-                }
-                Some(false) => {
+                } else {
                     let rif = p.rif_ipotesi.trim().to_uppercase();
-                    if !ipotesi_modello.contains(&rif) {
-                        errori.push((
-                            "ipotesi_inesistente".into(),
+                    if self.ipotesi_modello.contains(&rif) {
+                        ProvenienzaValore::Ipotesi { id: rif }
+                    } else {
+                        self.avvisi.push(avviso(
+                            Gravita::Informazione,
+                            "ipotesi_inesistente",
                             format!(
                                 "rigo {nr}: {nome:?} rimanda all'ipotesi «{}» che non esiste",
                                 p.rif_ipotesi
                             ),
+                            Some(&id),
                         ));
-                        continue;
+                        let testo = format!(
+                            "{nome:?} = {valore} {} (lavorazione {id}, rigo {nr}) ipotizzato senza spiegazione",
+                            p.unita
+                        );
+                        ProvenienzaValore::Ipotesi {
+                            id: self.nuova_ipotesi(testo, Impatto::Medio),
+                        }
                     }
-                    ProvenienzaValore::Ipotesi { id: rif }
-                }
-                None => {
-                    errori.push((
-                        "parametri_errati".into(),
-                        format!("rigo {nr}: provenienza «{}» sconosciuta", p.provenienza),
-                    ));
-                    continue;
-                }
-            };
-            if let ProvenienzaValore::Ipotesi { id } = &provenienza {
-                usate.insert(id.clone());
+                };
+                parametri.push(ParametroProposto {
+                    nome,
+                    valore: Some(valore),
+                    unita,
+                    provenienza,
+                });
             }
-            let valore_base = unita.in_base(valore);
-            valori.insert(nome, valore_base);
-            parametri.push(ParametroProposto {
-                nome,
-                valore,
-                unita,
-                valore_base,
-                provenienza,
+            // Ogni parametro della forma c'è: quelli non indicati sono da completare.
+            for &nome in f.parametri() {
+                if !parametri.iter().any(|p| p.nome == nome) {
+                    parametri.push(ParametroProposto {
+                        nome,
+                        valore: None,
+                        unita: unita_predefinita(nome),
+                        provenienza: ProvenienzaValore::Mancante,
+                    });
+                }
+            }
+            parametri.sort_by_key(|p| f.parametri().iter().position(|x| *x == p.nome));
+            righe.push(RigaProposta {
+                descrizione: r.descrizione.trim().to_owned(),
+                forma: f,
+                deduzione,
+                parametri,
             });
         }
-        let attesi: BTreeSet<Parametro> = f.parametri().iter().copied().collect();
-        let dati: BTreeSet<Parametro> = valori.keys().copied().collect();
-        let mancanti: Vec<_> = attesi.difference(&dati).collect();
-        let in_piu: Vec<_> = dati.difference(&attesi).collect();
-        if !mancanti.is_empty() || !in_piu.is_empty() {
-            errori.push((
-                "parametri_errati".into(),
-                format!(
-                    "rigo {nr}: la forma «{}» vuole {:?}; mancano {mancanti:?}, in più {in_piu:?}",
-                    f.nome(),
-                    f.parametri()
-                ),
-            ));
-            continue;
+        righe
+    }
+
+    /// Opzioni utilizzabili, in ordine di pertinenza.
+    fn opzioni(
+        &mut self,
+        l: &crate::risposta::LavorazioneSelezione,
+        dimensione: Option<Dimensione>,
+        chiara: bool,
+    ) -> (Vec<Opzione>, Vec<String>) {
+        let id = l.id.trim().to_uppercase();
+        let mut opzioni: Vec<Opzione> = Vec::new();
+        let mut scarti: Vec<String> = Vec::new();
+        for o in &l.opzioni {
+            let Some(c) = self.ctx.candidati.per_handle(&o.candidato) else {
+                scarti.push(format!("«{}» non è tra i candidati inviati", o.candidato));
+                self.avvisi.push(avviso(
+                    Gravita::Informazione,
+                    "candidato_inesistente",
+                    format!(
+                        "opzione «{}» non tra i candidati inviati: tolta",
+                        o.candidato
+                    ),
+                    Some(&id),
+                ));
+                continue;
+            };
+            if opzioni.iter().any(|x| x.codice == c.codice) {
+                self.avvisi.push(avviso(
+                    Gravita::Informazione,
+                    "opzione_ripetuta",
+                    format!("voce {} proposta due volte", c.codice),
+                    Some(&id),
+                ));
+                continue;
+            }
+            let elenco = self.ctx.progetto.elenco_prezzi.voce_per_codice(&c.codice);
+            let prezzario = self.ctx.prezzario.voce_per_codice(&c.codice);
+            let Some(voce) = elenco.or(prezzario) else {
+                scarti.push(format!("la voce {} non è più nel prezzario", c.codice));
+                continue;
+            };
+            let u = riconosci(&voce.unita_misura);
+            let misura_manuale = Forma::per_dimensione(u.dimensione).is_empty();
+            if let Some(d) = dimensione
+                && !misura_manuale
+                && u.dimensione != d
+            {
+                let m = format!(
+                    "{} è in «{}» ({}), le misure danno {}",
+                    voce.codice,
+                    voce.unita_misura,
+                    u.dimensione.nome(),
+                    d.nome()
+                );
+                self.avvisi.push(avviso(
+                    Gravita::Informazione,
+                    "unita_incompatibile",
+                    format!("opzione tolta: {m}"),
+                    Some(&id),
+                ));
+                scarti.push(m);
+                continue;
+            }
+            if misura_manuale {
+                self.avvisi.push(avviso(
+                    Gravita::Informazione,
+                    "misura_manuale",
+                    format!(
+                        "{}: l'unità «{}» non ha forme di misura, la quantità va inserita nel computo",
+                        voce.codice, voce.unita_misura
+                    ),
+                    Some(&id),
+                ));
+            }
+            let prezzo_prezzario = match (elenco, prezzario) {
+                (Some(e), Some(p)) if e.prezzo != p.prezzo => {
+                    self.avvisi.push(avviso(
+                        Gravita::Informazione,
+                        "prezzo_elenco_diverso",
+                        format!(
+                            "la voce {} è già nell'elenco prezzi a {} invece di {} del prezzario: vale il prezzo dell'elenco",
+                            voce.codice, e.prezzo, p.prezzo
+                        ),
+                        Some(&id),
+                    ));
+                    Some(p.prezzo)
+                }
+                _ => None,
+            };
+            let breve = voce.descrizione_breve.trim();
+            opzioni.push(Opzione {
+                handle: c.handle.clone(),
+                codice: voce.codice.clone(),
+                descrizione: if breve.is_empty() {
+                    tronca(voce.descrizione_estesa.trim(), 160)
+                } else {
+                    breve.to_owned()
+                },
+                descrizione_estesa: tronca(voce.descrizione_estesa.trim(), DESCRIZIONE_ESTESA),
+                unita_misura: voce.unita_misura.clone(),
+                prezzo: voce.prezzo,
+                prezzo_prezzario,
+                pertinenza: scegli(
+                    &o.pertinenza,
+                    &[
+                        ("alta", Pertinenza::Alta),
+                        ("media", Pertinenza::Media),
+                        ("bassa", Pertinenza::Bassa),
+                    ],
+                )
+                .unwrap_or(Pertinenza::Bassa),
+                motivazione: o.motivazione.trim().to_owned(),
+                misura_manuale,
+                preselezionata: false,
+            });
         }
-        parametri.sort_by_key(|p| f.parametri().iter().position(|x| *x == p.nome));
-        righi.push(rigo(
-            f,
-            &valori,
-            unita_voce.fattore,
-            r.descrizione.trim(),
-            deduzione,
-        ));
-        righe.push(RigaProposta {
-            descrizione: r.descrizione.trim().to_owned(),
-            forma: f,
-            deduzione,
-            parametri,
-        });
+        // Ordine di pertinenza, a parità l'ordine del modello.
+        opzioni.sort_by_key(|o| o.pertinenza);
+        opzioni.truncate(OPZIONI_MASSIME);
+        if chiara && let Some(prima) = opzioni.first_mut() {
+            prima.preselezionata = true;
+        }
+        (opzioni, scarti)
     }
-    if !errori.is_empty() {
-        return Err(errori);
-    }
-    ipotesi.append(&mut nuove_ipotesi);
-    avvisi.append(&mut nuovi_avvisi);
-    Ok(Accettata {
-        proposta: LavorazioneProposta {
-            id: id.to_owned(),
-            descrizione: l.descrizione.trim().to_owned(),
-            ruolo: ruolo.unwrap_or(Ruolo::Principale),
-            gruppo_alternativa: (!gruppo.is_empty()).then(|| gruppo.to_owned()),
-            complementare_di: (!di.is_empty()).then(|| di.to_uppercase()),
-            handle: candidato.handle.clone(),
-            codice: voce.codice.clone(),
-            unita_misura: voce.unita_misura.clone(),
-            righe,
-            ipotesi: usate.into_iter().collect(),
-            motivazione: l.motivazione.trim().to_owned(),
-            inclusa: true,
-        },
-        righi,
-    })
 }
 
-/// Misure di un rigo senza la descrizione: forma, segno e valori in unità base.
-type MisuraRigo = (Forma, bool, Vec<(Parametro, Decimal)>);
-
-/// Misure di una lavorazione senza le descrizioni.
-fn misure(l: &LavorazioneProposta) -> Vec<MisuraRigo> {
-    l.righe
-        .iter()
-        .map(|r| {
-            (
-                r.forma,
-                r.deduzione,
-                r.parametri
-                    .iter()
-                    .map(|p| (p.nome, p.valore_base.normalize()))
-                    .collect(),
-            )
-        })
-        .collect()
-}
-
-fn nota(l: &LavorazioneProposta, ipotesi: &[Ipotesi]) -> String {
-    let mut n = format!("Assistente AI, {}: {}.", l.id, l.descrizione);
-    if !l.motivazione.is_empty() {
-        n.push_str(&format!(" Scelta: {}.", l.motivazione));
-    }
-    if !l.ipotesi.is_empty() {
-        let testi: Vec<String> = l
-            .ipotesi
-            .iter()
-            .map(|id| match ipotesi.iter().find(|i| i.id == *id) {
-                Some(i) => format!("{id} ({})", i.testo),
-                None => id.clone(),
-            })
-            .collect();
-        n.push_str(&format!(" Ipotesi: {}.", testi.join("; ")));
-    }
-    tronca(&n, NOTA_MASSIMA)
-}
-
-/// Valida una risposta di selezione e la traduce in una proposta con i comandi.
+/// Valida una risposta di selezione e la traduce in una proposta.
 ///
 /// # Errors
-/// Esito sconosciuto o identificativi ripetuti: la risposta va richiesta di nuovo.
-#[allow(clippy::too_many_lines)]
+/// Identificativi ripetuti: la risposta va richiesta di nuovo.
 pub fn valida_selezione(
     risposta: &RispostaSelezione,
     ctx: &Contesto<'_>,
 ) -> Result<Proposta, ErroreRisposta> {
-    let esito_modello = scegli(
-        &risposta.esito,
-        &[("completo", 0u8), ("provvisorio", 1), ("impossibile", 2)],
-    )
-    .ok_or_else(|| ErroreRisposta::EsitoSconosciuto {
-        esito: risposta.esito.clone(),
-    })?;
     for (tipo, ids) in [
         (
             "lavorazioni",
@@ -727,226 +768,110 @@ pub fn valida_selezione(
             }
         }
     }
-    let fondati = estrai(ctx.richiesta);
-    let mut ipotesi: Vec<Ipotesi> = risposta
+    let mut st = Stato {
+        ctx,
+        fondati: estrai(ctx.richiesta),
+        ipotesi_modello: risposta
+            .ipotesi
+            .iter()
+            .map(|i| i.id.trim().to_uppercase())
+            .collect(),
+        ipotesi: risposta
+            .ipotesi
+            .iter()
+            .map(|i| Ipotesi {
+                id: i.id.trim().to_uppercase(),
+                testo: i.testo.trim().to_owned(),
+                impatto: scegli(
+                    &i.impatto,
+                    &[
+                        ("basso", Impatto::Basso),
+                        ("medio", Impatto::Medio),
+                        ("alto", Impatto::Alto),
+                    ],
+                )
+                .unwrap_or(Impatto::Alto),
+                dalla_validazione: false,
+            })
+            .collect(),
+        avvisi: Vec::new(),
+    };
+    let mut lavorazioni = Vec::new();
+    let mut senza_voce = Vec::new();
+    for l in &risposta.lavorazioni {
+        let id = l.id.trim().to_uppercase();
+        let chiara =
+            scegli(&l.chiarezza, &[("chiara", true), ("da_precisare", false)]).unwrap_or(false);
+        let righe = st.righe(l);
+        let dimensione = righe.first().map(|r| r.forma.dimensione());
+        let (opzioni, scarti) = st.opzioni(l, dimensione, chiara);
+        if opzioni.is_empty() {
+            senza_voce.push(LavorazioneSenzaVoce {
+                id,
+                descrizione: l.descrizione.trim().to_owned(),
+                motivo: if scarti.is_empty() {
+                    "nessuna voce pertinente nel prezzario: va scelta a mano o creato un nuovo prezzo".into()
+                } else {
+                    format!("nessuna voce utilizzabile ({})", scarti.join("; "))
+                },
+            });
+            continue;
+        }
+        let ipotesi: BTreeSet<String> = righe
+            .iter()
+            .flat_map(|r| &r.parametri)
+            .filter_map(|p| match &p.provenienza {
+                ProvenienzaValore::Ipotesi { id } => Some(id.clone()),
+                _ => None,
+            })
+            .collect();
+        let da_precisare = l.da_precisare.trim();
+        lavorazioni.push(LavorazioneProposta {
+            id,
+            descrizione: l.descrizione.trim().to_owned(),
+            chiara,
+            da_precisare: if chiara {
+                String::new()
+            } else if da_precisare.is_empty() {
+                "scegliere tra le opzioni".into()
+            } else {
+                da_precisare.to_owned()
+            },
+            righe,
+            opzioni,
+            ipotesi: ipotesi.into_iter().collect(),
+        });
+    }
+    // Solo le ipotesi usate restano.
+    let usate: BTreeSet<&String> = lavorazioni.iter().flat_map(|l| &l.ipotesi).collect();
+    let ipotesi: Vec<Ipotesi> = st
         .ipotesi
         .iter()
-        .map(|i| Ipotesi {
-            id: i.id.trim().to_uppercase(),
-            testo: i.testo.trim().to_owned(),
-            impatto: scegli(
-                &i.impatto,
-                &[
-                    ("basso", Impatto::Basso),
-                    ("medio", Impatto::Medio),
-                    ("alto", Impatto::Alto),
-                ],
-            )
-            .unwrap_or(Impatto::Alto),
-            dalla_validazione: false,
-        })
+        .filter(|i| usate.contains(&i.id))
+        .cloned()
         .collect();
-    let mut avvisi = Vec::new();
-    let mut accettate: Vec<Accettata> = Vec::new();
-    let mut escluse = Vec::new();
-
-    for l in &risposta.lavorazioni {
-        if l.candidato.trim().eq_ignore_ascii_case("NESSUNO") {
-            avvisi.push(avviso(
-                Gravita::Avviso,
-                "voce_non_trovata",
-                format!("{}: nessuna voce pertinente tra i candidati; va scelta a mano o creato un nuovo prezzo", l.descrizione.trim()),
-                Some(l.id.trim()),
-            ));
-            escluse.push(LavorazioneEsclusa {
-                id: l.id.trim().to_owned(),
-                descrizione: l.descrizione.trim().to_owned(),
-                motivi: vec!["nessuna voce pertinente tra i candidati".into()],
-            });
-            continue;
-        }
-        match controlla(l, risposta, ctx, &fondati, &mut ipotesi, &mut avvisi) {
-            Ok(a) => accettate.push(a),
-            Err(errori) => {
-                for (codice, messaggio) in &errori {
-                    avvisi.push(avviso(
-                        Gravita::Errore,
-                        codice,
-                        messaggio.clone(),
-                        Some(l.id.trim()),
-                    ));
-                }
-                escluse.push(LavorazioneEsclusa {
-                    id: l.id.trim().to_owned(),
-                    descrizione: l.descrizione.trim().to_owned(),
-                    motivi: errori.into_iter().map(|(_, m)| m).collect(),
-                });
-            }
-        }
-    }
-
-    // Duplicati: stessa voce e stessi righi di una lavorazione precedente.
-    let mut tenute: Vec<Accettata> = Vec::new();
-    for a in accettate {
-        let doppione = tenute
-            .iter()
-            .find(|t| {
-                t.proposta.codice == a.proposta.codice && misure(&t.proposta) == misure(&a.proposta)
-            })
-            .map(|t| t.proposta.id.clone());
-        if let Some(prima) = doppione {
-            let m = format!("stessa voce e stessi righi della lavorazione {prima}");
-            avvisi.push(avviso(
-                Gravita::Errore,
-                "duplicato",
-                m.clone(),
-                Some(&a.proposta.id),
-            ));
-            escluse.push(LavorazioneEsclusa {
-                id: a.proposta.id.clone(),
-                descrizione: a.proposta.descrizione.clone(),
-                motivi: vec![m],
-            });
-            continue;
-        }
-        if let Some(altra) = tenute
-            .iter()
-            .find(|t| t.proposta.codice == a.proposta.codice)
-        {
-            avvisi.push(avviso(
-                Gravita::Avviso,
-                "possibile_doppio_conteggio",
-                format!(
-                    "la voce {} è usata anche dalla lavorazione {}: verificare che le quantità non si sovrappongano",
-                    a.proposta.codice, altra.proposta.id
-                ),
-                Some(&a.proposta.id),
-            ));
-        }
-        tenute.push(a);
-    }
-
-    // Alternative: entra nei comandi solo la prima di ogni gruppo.
-    let mut gruppi_visti: BTreeMap<String, String> = BTreeMap::new();
-    for a in &mut tenute {
-        if a.proposta.ruolo != Ruolo::Alternativa {
-            continue;
-        }
-        let gruppo = a
-            .proposta
-            .gruppo_alternativa
-            .clone()
-            .unwrap_or_default()
-            .to_lowercase();
-        match gruppi_visti.get(&gruppo) {
-            Some(prima) => {
-                a.proposta.inclusa = false;
-                avvisi.push(avviso(
-                    Gravita::Informazione,
-                    "alternativa_non_inclusa",
-                    format!(
-                        "alternativa a {prima} (gruppo «{gruppo}»): non inclusa nel computo, si può scegliere al suo posto"
-                    ),
-                    Some(&a.proposta.id),
-                ));
-            }
-            None => {
-                gruppi_visti.insert(gruppo, a.proposta.id.clone());
-            }
-        }
-    }
-
-    // Complementari: la principale deve essere tra le lavorazioni incluse.
-    let incluse: BTreeSet<String> = tenute
-        .iter()
-        .filter(|a| a.proposta.inclusa)
-        .map(|a| a.proposta.id.to_uppercase())
-        .collect();
-    for a in &tenute {
-        if let Some(di) = &a.proposta.complementare_di
-            && !incluse.contains(di)
-        {
-            avvisi.push(avviso(
-                Gravita::Avviso,
-                "complementare_senza_principale",
-                format!("complementare di {di}, che non è tra le lavorazioni incluse"),
-                Some(&a.proposta.id),
-            ));
-        }
-    }
-
-    // Prezzi: una voce già nell'elenco mantiene il suo prezzo.
-    let mut segnalati = BTreeSet::new();
-    for a in tenute.iter().filter(|a| a.proposta.inclusa) {
-        let codice = &a.proposta.codice;
-        if let (Some(e), Some(p)) = (
-            ctx.progetto.elenco_prezzi.voce_per_codice(codice),
-            ctx.prezzario.voce_per_codice(codice),
-        ) && e.prezzo != p.prezzo
-            && segnalati.insert(codice.clone())
-        {
-            avvisi.push(avviso(
-                Gravita::Avviso,
-                "prezzo_elenco_diverso",
-                format!(
-                    "la voce {codice} è già nell'elenco prezzi a {} invece di {} del prezzario: vale il prezzo dell'elenco",
-                    e.prezzo, p.prezzo
-                ),
-                Some(&a.proposta.id),
-            ));
-        }
-    }
-
-    // Comandi.
-    let mut comandi = Vec::new();
-    let mut da_copiare: Vec<String> = Vec::new();
-    for a in tenute.iter().filter(|a| a.proposta.inclusa) {
-        let c = &a.proposta.codice;
-        if ctx.progetto.elenco_prezzi.voce_per_codice(c).is_none() && !da_copiare.contains(c) {
-            da_copiare.push(c.clone());
-        }
-    }
-    if !da_copiare.is_empty() {
-        comandi.push(Comando::CopiaDaPrezzario {
-            prezzario: ctx.nome_prezzario.to_owned(),
-            codici: da_copiare,
-        });
-    }
-    for a in tenute.iter().filter(|a| a.proposta.inclusa) {
-        comandi.push(Comando::AggiungiVoceComputo {
-            computo: ctx.computo.map(str::to_owned),
-            codice: a.proposta.codice.clone(),
-            posizione: None,
-            righi: a.righi.clone(),
-            categorie: None,
-            wbs: None,
-            note: Some(nota(&a.proposta, &ipotesi)),
-        });
-    }
-
-    let lavorazioni: Vec<LavorazioneProposta> = tenute.into_iter().map(|a| a.proposta).collect();
-    let esito = if !lavorazioni.iter().any(|l| l.inclusa) {
-        EsitoProposta::Impossibile
-    } else if esito_modello == 0
-        && escluse.is_empty()
+    let esito = if lavorazioni.is_empty() {
+        EsitoProposta::Vuoto
+    } else if senza_voce.is_empty()
         && ipotesi.is_empty()
         && risposta.informazioni_mancanti.is_empty()
-        && avvisi.iter().all(|a| a.gravita == Gravita::Informazione)
+        && lavorazioni.iter().all(|l| l.chiara && !l.da_completare())
+        && st.avvisi.iter().all(|a| a.gravita == Gravita::Informazione)
     {
         EsitoProposta::Completo
     } else {
-        EsitoProposta::Provvisorio
+        EsitoProposta::DaRivedere
     };
     Ok(Proposta {
         esito,
-        esito_modello: risposta.esito.trim().to_lowercase(),
+        nome_prezzario: ctx.nome_prezzario.to_owned(),
+        computo: ctx.computo.map(str::to_owned),
         lavorazioni,
-        escluse,
+        senza_voce,
         ipotesi,
         informazioni_mancanti: risposta.informazioni_mancanti.clone(),
-        avvisi,
-        valori_fondati: fondati,
-        comandi,
+        avvisi: st.avvisi,
+        valori_fondati: st.fondati,
     })
 }
 
@@ -966,6 +891,7 @@ mod test {
                 Forma::TUTTE.iter().any(|f| f.parametri().contains(&p)),
                 "{p:?} inutilizzato"
             );
+            assert!(p.unita_ammesse().contains(&unita_predefinita(p)), "{p:?}");
         }
         for nome in schema::DIMENSIONI_ATTESE {
             let d = crate::candidati::dimensioni_attese(nome);

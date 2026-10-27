@@ -27,8 +27,9 @@ Regole:
 - Identificativi L01, L02… nell'ordine in cui le lavorazioni compaiono.
 - query_ricerca: poche parole tecniche come compaiono nei prezzari regionali (lavorazione, materiale, elemento), senza misure né quantità.
 - dimensione_attesa: la grandezza con cui la lavorazione si misura (lunghezza, superficie, volume, massa, numero, a_corpo); qualsiasi se non è chiaro.
-- informazioni_mancanti: i dati che servono e mancano (dimensioni, spessori, materiali). bloccante = true se senza quel dato non si può nemmeno impostare il computo.
-- esito = chiedi solo se manca un'informazione bloccante; altrimenti procedi."
+- Se la lavorazione è riconoscibile ma mancano dettagli (materiale, tipo, spessore), elencala comunque: la scelta tra le voci possibili la farà l'utente.
+- informazioni_mancanti: i dati che servono e mancano (dimensioni, spessori, materiali). bloccante = true solo se senza quel dato non si capisce nemmeno quale lavorazione serve.
+- esito = chiedi solo se non riesci a individuare nessuna lavorazione; altrimenti procedi."
     )
 }
 
@@ -62,28 +63,30 @@ pub fn sistema_selezione() -> String {
     format!(
         "{RUOLO}
 
-Compito: per ogni lavorazione scegli la voce del prezzario tra i candidati forniti e scrivi i righi di misura.
+Compito: per ogni lavorazione proponi le voci possibili tra i candidati forniti, dalla più alla meno pertinente, e scrivi i righi di misura. L'utente sceglierà quali voci usare.
 
-Voci:
-- candidato: solo un handle tra quelli forniti (c01, c02…). Se nessun candidato è pertinente scrivi NESSUNO: non adattare voci sbagliate e non inventarne.
+Opzioni:
+- opzioni: fino a {massime} handle tra quelli forniti (c01, c02…), ordinati per pertinenza (alta, media, bassa). Solo voci davvero adatte alla lavorazione: meglio due buone opzioni che cinque forzate. Se nessun candidato è pertinente, nessuna opzione.
+- Le opzioni di una lavorazione condividono i righi di misura: proponi solo voci con un'unità di misura coerente con quei righi (una voce in m² vuole righi che danno una superficie).
+- chiarezza = chiara se la richiesta basta a scegliere la voce (la prima opzione è quella giusta); da_precisare se manca un'informazione per scegliere (materiale, tipo, finitura, spessore): in da_precisare scrivi in poche parole cosa manca (es. «materiale del pavimento non indicato») e proponi le opzioni più plausibili.
+- motivazione: una frase breve sul perché della voce (es. «gres porcellanato, posa a colla»).
 - Non indicare prezzi né codici: li prende il programma dal prezzario.
-- L'unità di misura della voce deve corrispondere alla forma dei righi (una voce in m² vuole una forma che dà una superficie).
 
-Righi di misura: usa solo queste forme e i loro parametri, tutti obbligatori.
+Righi di misura: usa solo queste forme e i loro parametri, tutti presenti.
 {forme}
 Parametri: N numero di parti uguali (intero, unità n); L, B, H, D, B1, B2 in mm, cm o m; A in m2; V in m3; P in kg/m. Valori con il punto decimale, maggiori di zero.
 - segno = detrazione per i vuoti da togliere (porte, finestre).
 
 Dati e ipotesi:
-- provenienza = utente solo se il numero è scritto nella richiesta (anche in un'altra unità). Ogni altro valore è un'ipotesi: aggiungila in ipotesi (I01, I02…), con impatto, e indica il suo id in rif_ipotesi.
-- Non inventare dimensioni, spessori, stratigrafie o sfridi. Se un dato mancante cambia molto il risultato mettilo in informazioni_mancanti; se usi comunque un'ipotesi, l'esito è provvisorio.
+- provenienza = utente solo se il numero è scritto nella richiesta (anche in un'altra unità).
+- Se un dato manca ma un valore usuale è ragionevole (altezza di un piano, spessore corrente), usalo come ipotesi: aggiungila in ipotesi (I01, I02…) con l'impatto e indica il suo id in rif_ipotesi.
+- Se un dato manca e non è ragionevole ipotizzarlo, valore vuoto e provenienza mancante: l'utente lo completerà. Non inventare dimensioni, spessori, stratigrafie o sfridi.
+- informazioni_mancanti: le domande utili per completare o precisare il computo.
 
 Lavorazioni:
-- ruolo principale; complementare (con complementare_di = la lavorazione principale) per ciò che la completa; alternativa (con lo stesso gruppo_alternativa) per soluzioni tra cui scegliere: ne verrà computata una sola.
-- Non contare due volte la stessa quantità con voci che si sovrappongono.
-- motivazione: una frase breve sul perché della voce scelta.
-- esito: completo solo senza ipotesi né informazioni mancanti; impossibile se nessuna voce è utilizzabile.",
-        forme = catalogo_forme()
+- Una voce per lavorazione nei righi: non contare due volte la stessa quantità in lavorazioni diverse.",
+        forme = catalogo_forme(),
+        massime = crate::schema::OPZIONI_MASSIME,
     )
 }
 
@@ -100,7 +103,7 @@ pub fn utente_selezione(
         .map(|l| json!({"id": l.id, "descrizione": l.descrizione, "dimensione_attesa": l.dimensione_attesa}))
         .collect();
     format!(
-        "Richiesta dell'utente:\n<<<\n{}\n>>>\n\nLavorazioni individuate:\n{}\n\nCandidati del prezzario (scegli solo tra questi handle):\n{}",
+        "Richiesta dell'utente:\n<<<\n{}\n>>>\n\nLavorazioni individuate:\n{}\n\nCandidati del prezzario (proponi solo questi handle):\n{}",
         richiesta.trim(),
         Value::Array(lavorazioni),
         candidati.per_modello()

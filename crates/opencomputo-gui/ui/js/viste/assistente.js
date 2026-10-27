@@ -6,7 +6,7 @@
 // computo solo con «Applica», come un passo annullabile. Le operazioni lunghe girano nel
 // motore senza bloccare le altre finestre e si possono annullare.
 
-import { h, sostituisci, numero, euro, notifica, conferma } from '../dom.js';
+import { h, sostituisci, numero, euro, notifica, conferma, decimale, rimanda } from '../dom.js';
 import { chiedi, agisci, stato, mostraErrore, vai, computoCorrente, ErroreServizio } from '../stato.js';
 import { ascolta, scegliFile, FILTRO_PREZZARI } from '../piattaforma.js';
 
@@ -25,6 +25,16 @@ const locale = {
   indici: {},
   /** Ultimo risultato di assistente_proponi. */
   risultato: null,
+  /** Opzioni spuntate: {lavorazione: Set(codici)}. */
+  spunte: {},
+  /** Misure come scritte dall'utente: {lavorazione: [{parametro: testo}]} (solo se cambiate). */
+  misure: {},
+  /** Ultima anteprima (valori delle opzioni, prova delle scelte). */
+  anteprima: null,
+  /** Errore delle misure o delle scelte (testo). */
+  erroreScelte: null,
+  /** Opzioni già aggiunte al computo da questa proposta: Set('L01|T.01'). */
+  aggiunte: new Set(),
   /** Operazione in corso: {tipo: 'proponi'|'indicizza', prezzario, inizio}. */
   inCorso: null,
   /** Ultimo avanzamento dell'indicizzazione. */
@@ -35,12 +45,12 @@ let elVista = null;
 let orologio = null;
 
 const UNITA = { mm: 'mm', cm: 'cm', m: 'm', m2: 'm²', m3: 'm³', kg: 'kg', kg_m: 'kg/m', n: '' };
-const RUOLI = { principale: 'Principale', complementare: 'Complementare', alternativa: 'Alternativa' };
+const PERTINENZE = { alta: ['alta', 'ok'], media: ['media', 'neutra'], bassa: ['bassa', 'neutra debole'] };
 const IMPATTI = { basso: 'impatto basso', medio: 'impatto medio', alto: 'impatto alto' };
 const ESITI = {
   completo: ['Completa', 'ok'],
-  provvisorio: ['Da rivedere', 'avviso'],
-  impossibile: ['Nessuna voce proposta', 'errore'],
+  da_rivedere: ['Da rivedere', 'avviso'],
+  vuoto: ['Nessuna voce nel prezzario', 'errore'],
 };
 const MODALITA = [
   ['automatica', 'Automatica (JSON vincolato a uno schema)'],
@@ -106,6 +116,7 @@ function ridisegna() {
           'La richiesta e le descrizioni delle voci candidate vanno ad Anthropic; il testo delle voci dei prezzari e delle ricerche va a OpenAI. Prezzi e importi non vengono inviati.'),
         locale.scheda !== 'impostazioni' && h('button', { class: 'link', onclick: () => { locale.scheda = 'impostazioni'; ridisegna(); } }, 'Dettagli')),
       corpo));
+  aggiornaValori();
   aggiornaOrologio();
 }
 
@@ -167,81 +178,232 @@ async function proponi() {
   const r = await lavora({ tipo: 'proponi', prezzario: locale.prezzario }, {
     richiesta: 'assistente_proponi', prezzario: locale.prezzario, testo: locale.testo.trim(), computo: locale.computo,
   });
-  if (r) locale.risultato = r;
+  if (r) nuovaProposta(r);
   ridisegna();
 }
+
+/** Stato iniziale delle scelte per una nuova proposta: le opzioni preselezionate. */
+function nuovaProposta(r) {
+  locale.risultato = r;
+  locale.spunte = {};
+  locale.misure = {};
+  locale.aggiunte = new Set();
+  locale.erroreScelte = null;
+  // `anteprima` è l'anteprima del motore oppure {errore} se non si è potuta calcolare.
+  const a = r.anteprima;
+  locale.anteprima = a?.opzioni ? a : null;
+  const errore = a?.errore;
+  if (errore && errore.motivo !== 'nessuna_scelta') locale.erroreScelte = errore.descrizione;
+  for (const l of r.proposta?.lavorazioni ?? []) {
+    locale.spunte[l.id] = new Set(l.opzioni.filter((o) => o.preselezionata).map((o) => o.codice));
+  }
+}
+
+/** Scelte correnti per il motore: tutte le lavorazioni, con le misure cambiate. */
+function scelte() {
+  const p = locale.risultato?.proposta;
+  if (!p) return [];
+  return p.lavorazioni.map((l) => {
+    const s = { lavorazione: l.id, codici: [...(locale.spunte[l.id] ?? [])] };
+    const m = locale.misure[l.id];
+    if (m) {
+      s.misure = m.map((rigo) => Object.fromEntries(Object.entries(rigo).map(([k, v]) => {
+        const d = decimale(v);
+        return [k, d ?? ''];
+      })));
+    }
+    return s;
+  });
+}
+
+function spuntate() {
+  return Object.values(locale.spunte).reduce((n, s) => n + s.size, 0);
+}
+
+let richiestaAnteprima = 0;
+/** Ricalcola dal motore i valori delle opzioni e la prova delle scelte. */
+const aggiornaAnteprima = rimanda(async () => {
+  if (!locale.risultato?.proposta) return;
+  const n = ++richiestaAnteprima;
+  let s;
+  try {
+    s = scelte();
+  } catch (e) {
+    locale.erroreScelte = e.message;
+    aggiornaValori();
+    return;
+  }
+  try {
+    const a = await chiedi({ richiesta: 'assistente_anteprima', scelte: s });
+    if (n !== richiestaAnteprima) return;
+    locale.anteprima = a;
+    locale.erroreScelte = a.errore && a.errore.motivo !== 'nessuna_scelta' ? a.errore.descrizione : null;
+  } catch (e) {
+    if (n !== richiestaAnteprima) return;
+    locale.erroreScelte = e.message;
+  }
+  aggiornaValori();
+}, 250);
 
 function vistaRisultato(r) {
   if (r.esito === 'da_chiarire') {
     const domande = r.analisi.informazioni_mancanti;
     return h('section', { class: 'scheda ai-risultato' },
       h('h2', null, 'Servono altre informazioni'),
-      h('p', null, 'Senza queste risposte il computo non sarebbe attendibile. Completare la richiesta e riprovare.'),
-      h('ul', { class: 'elenco-problemi' }, domande.map((d) => h('li', { class: d.bloccante ? 'avviso' : 'informazione' }, d.domanda,
-        d.lavorazioni.length ? h('small', null, ` — ${d.lavorazioni.join(', ')}`) : null))),
-      h('button', { class: 'pulsante', name: 'aggiungi-risposte', onclick: () => aggiungiRisposte(domande) }, 'Aggiungi le domande alla richiesta'),
+      h('p', null, 'Non è stato possibile riconoscere le lavorazioni. Completare la richiesta e riprovare.'),
+      h('ul', { class: 'elenco-problemi' }, domande.map((d) => h('li', { class: d.bloccante ? 'avviso' : 'informazione' }, d.domanda))),
+      domande.length ? h('button', { class: 'pulsante', name: 'aggiungi-risposte', onclick: () => aggiungiRisposte(domande) }, 'Aggiungi le domande alla richiesta') : null,
       consumi(r));
   }
   const p = r.proposta;
-  const prova = r.prova ?? { ok: false, errore: { descrizione: 'prova non eseguita' } };
-  const voci = new Map((prova.voci ?? []).map((v) => [v.lavorazione, v]));
   const [testoEsito, classeEsito] = ESITI[p.esito] ?? [p.esito, 'neutra'];
-  const totali = prova.esito?.totali ?? [];
-  const incluse = p.lavorazioni.filter((l) => l.inclusa);
+  const daGuardare = p.avvisi.filter((a) => a.gravita !== 'informazione');
+  const dettagli = p.avvisi.filter((a) => a.gravita === 'informazione');
   return h('section', { class: 'scheda ai-risultato', 'aria-label': 'Proposta' },
     h('h2', null, 'Proposta', h('span', { class: ['etichetta', classeEsito], name: 'esito-proposta' }, testoEsito),
       h('span', { class: 'etichetta neutra' }, r.ricerca_ibrida ? 'ricerca ibrida' : 'ricerca per parole')),
     r.avviso_ricerca && h('p', { class: 'nota' }, r.avviso_ricerca),
-    prova.ok
-      ? h('div', { class: 'ai-totali', role: 'status' }, totali.length
-        ? totali.map((t) => h('span', null, `${t.computo}: ${euro(t.prima)} → `, h('strong', null, euro(t.dopo))))
-        : h('span', { class: 'vuoto' }, 'Nessun totale cambia.'))
-      : h('div', { class: 'banner errore' }, h('span', null, `La proposta non si può applicare: ${prova.errore?.descrizione ?? 'errore'}`)),
-    incluse.length ? h('table', { class: 'ai-voci' },
-      h('thead', null, h('tr', null,
-        h('th', null, 'Lavorazione'), h('th', null, 'Voce'), h('th', { class: 'num' }, 'Quantità'), h('th', null, 'U.M.'),
-        h('th', { class: 'num' }, 'Prezzo'), h('th', { class: 'num' }, 'Importo'))),
-      h('tbody', null, incluse.map((l) => rigaLavorazione(l, voci.get(l.id), p.ipotesi)))) : null,
-    elenco('Alternative non scelte', p.lavorazioni.filter((l) => !l.inclusa), (l) => h('li', { class: 'informazione' },
-      `${l.id} — ${l.descrizione}: `, h('span', { class: 'mono' }, l.codice), l.motivazione ? ` (${l.motivazione})` : '')),
-    elenco('Lavorazioni escluse', p.escluse, (l) => h('li', { class: 'avviso' }, h('strong', null, `${l.id} — ${l.descrizione}`), h('small', null, ` — ${l.motivi.join('; ')}`))),
+    p.lavorazioni.length
+      ? h('p', { class: 'nota' }, 'Per ogni lavorazione spuntare le voci da aggiungere (anche più di una) e correggere o completare le misure: quantità e importi si aggiornano.')
+      : null,
+    p.lavorazioni.map((l) => vistaLavorazione(l, p.ipotesi)),
+    elenco('Lavorazioni senza voce nel prezzario', p.senza_voce, (l) => h('li', { class: 'avviso' },
+      h('strong', null, `${l.id} — ${l.descrizione}`), h('small', null, ` — ${l.motivo}`))),
     elenco('Ipotesi', p.ipotesi, (i) => h('li', { class: i.impatto === 'alto' ? 'avviso' : 'informazione' },
       h('strong', null, `${i.id}: `), i.testo, h('span', { class: ['etichetta', i.impatto === 'alto' ? 'avviso' : 'neutra'] }, IMPATTI[i.impatto] ?? i.impatto),
       i.dalla_validazione ? h('small', null, ' — valore non trovato nella richiesta') : null)),
-    elenco('Informazioni mancanti', p.informazioni_mancanti, (d) => h('li', { class: d.bloccante ? 'avviso' : 'informazione' }, d.domanda)),
-    elenco('Avvisi', p.avvisi, (a) => h('li', { class: a.gravita }, a.messaggio, a.lavorazione ? h('small', null, ` — ${a.lavorazione}`) : null)),
-    h('div', { class: 'ai-azioni' },
-      h('button', {
-        class: 'pulsante primario', name: 'applica-proposta', disabled: !prova.ok || !incluse.length || !!locale.inCorso, onclick: applica,
-        title: 'Aggiunge le voci al computo; si annulla come ogni altra modifica',
-      }, `Applica al computo «${prova.computo ?? locale.computo ?? ''}»`),
-      h('button', { class: 'pulsante', name: 'scarta-proposta', onclick: () => { locale.risultato = null; ridisegna(); } }, 'Scarta')),
-    consumi(r));
+    p.informazioni_mancanti.length ? h('div', { class: 'ai-elenco' },
+      h('h3', null, 'Domande per precisare'),
+      h('ul', { class: 'elenco-problemi' }, p.informazioni_mancanti.map((d) => h('li', { class: 'informazione' }, d.domanda))),
+      h('button', { class: 'link', name: 'aggiungi-risposte', onclick: () => aggiungiRisposte(p.informazioni_mancanti) }, 'Aggiungi le domande alla richiesta')) : null,
+    elenco('Da verificare', daGuardare, (a) => h('li', { class: a.gravita }, a.messaggio, a.lavorazione ? h('small', null, ` — ${a.lavorazione}`) : null)),
+    dettagli.length ? h('details', { class: 'ai-dettagli' },
+      h('summary', null, `Dettagli della verifica (${dettagli.length})`),
+      h('ul', { class: 'elenco-problemi' }, dettagli.map((a) => h('li', { class: 'informazione' }, a.messaggio, a.lavorazione ? h('small', null, ` — ${a.lavorazione}`) : null)))) : null,
+    consumi(r),
+    p.lavorazioni.length ? barraScelte() : null);
 }
 
-function rigaLavorazione(l, v, ipotesi) {
-  const righe = l.righe.map((r) => h('li', null,
+function vistaLavorazione(l, ipotesi) {
+  const titoloOpzioni = l.chiara ? 'Alternative proposte' : 'Opzioni possibili';
+  const spunte = locale.spunte[l.id] ?? new Set();
+  return h('div', { class: ['ai-lavorazione', !l.chiara && 'da-precisare'], dataset: { lavorazione: l.id } },
+    h('h3', null, h('span', { class: 'ai-id' }, l.id), ' ', l.descrizione,
+      l.chiara ? null : h('span', { class: 'etichetta avviso' }, 'Da precisare')),
+    l.chiara ? null : h('p', { class: 'ai-precisare' }, `${l.da_precisare[0].toUpperCase()}${l.da_precisare.slice(1)}: scegliere tra le opzioni possibili.`),
+    l.righe.length ? h('div', { class: 'ai-misure' }, h('span', { class: 'ai-etichetta-blocco' }, 'Misure'),
+      l.righe.map((r, i) => rigaMisure(l, r, i, ipotesi))) : h('p', { class: 'nota' }, 'Nessuna misura: la quantità va inserita nel computo.'),
+    h('table', { class: 'ai-opzioni', 'aria-label': `${titoloOpzioni} per ${l.id}` },
+      h('caption', null, titoloOpzioni),
+      h('thead', null, h('tr', null,
+        h('th', { class: 'spunta' }, ''), h('th', null, 'Pertinenza'), h('th', null, 'Voce'),
+        h('th', { class: 'num' }, 'Quantità'), h('th', null, 'U.M.'), h('th', { class: 'num' }, 'Prezzo'), h('th', { class: 'num' }, 'Importo'))),
+      h('tbody', null, l.opzioni.map((o) => rigaOpzione(l, o, spunte)))));
+}
+
+function rigaMisure(l, r, i, ipotesi) {
+  const misure = locale.misure[l.id]?.[i];
+  return h('div', { class: 'ai-rigo' },
     h('span', null, `${r.deduzione ? 'a dedurre: ' : ''}${r.descrizione || r.forma} `),
-    h('span', { class: 'ai-forma' }, r.forma.replace(/_/g, ' ')), ' ',
-    r.parametri.map((p) => h('span', {
-      class: ['ai-parametro', p.provenienza.tipo === 'ipotesi' && 'ipotesi'],
-      title: p.provenienza.tipo === 'ipotesi'
-        ? `Ipotesi ${p.provenienza.id}: ${ipotesi.find((i) => i.id === p.provenienza.id)?.testo ?? ''}`
-        : (p.provenienza.testo ? `Dalla richiesta: «${p.provenienza.testo}»` : 'Dalla richiesta'),
-    }, `${p.nome} = ${numero(p.valore, decimali(p.valore, 0))}${UNITA[p.unita] ? ' ' + UNITA[p.unita] : ''}`,
-    p.provenienza.tipo === 'ipotesi' ? ` (${p.provenienza.id})` : ''))));
-  return [
-    h('tr', { class: 'ai-voce', dataset: { lavorazione: l.id } },
-      h('td', null, h('strong', null, l.id), ' ', l.descrizione, l.ruolo !== 'principale' ? h('span', { class: 'etichetta neutra' }, RUOLI[l.ruolo]) : null),
-      h('td', null, h('span', { class: 'mono' }, l.codice), ' ', v?.descrizione ?? ''),
-      h('td', { class: 'num' }, v?.quantita ? numero(v.quantita, decimali(v.quantita)) : '—'),
-      h('td', null, v?.unita_misura ?? l.unita_misura),
-      h('td', { class: 'num' }, v ? numero(v.prezzo, 2) : '—'),
-      h('td', { class: 'num' }, v?.importo ? numero(v.importo, 2) : '—')),
-    h('tr', { class: 'ai-dettaglio' }, h('td', { colSpan: 6 },
-      h('ul', { class: 'ai-righe' }, righe),
-      l.motivazione ? h('div', { class: 'ai-motivazione' }, 'Scelta: ', l.motivazione) : null)),
-  ];
+    h('span', { class: 'ai-forma' }, r.forma.replace(/_/g, ' ')),
+    r.parametri.map((p) => {
+      const testo = misure?.[p.nome] ?? (p.valore === null ? '' : numero(p.valore, decimali(p.valore, 0)));
+      const tipo = misure?.[p.nome] !== undefined && misure[p.nome] !== (p.valore === null ? '' : numero(p.valore, decimali(p.valore, 0)))
+        ? 'modificato' : p.provenienza.tipo;
+      const input = h('input', {
+        type: 'text', inputMode: 'decimal', name: `misura-${l.id}-${i}-${p.nome}`, value: testo, autocomplete: 'off',
+        class: ['ai-valore', tipo], 'aria-label': `${l.id}, ${r.descrizione || r.forma}: ${p.nome}`,
+        placeholder: '?',
+        title: {
+          ipotesi: `Ipotesi ${p.provenienza.id}: ${ipotesi.find((x) => x.id === p.provenienza.id)?.testo ?? ''}`,
+          utente: p.provenienza.testo ? `Dalla richiesta: «${p.provenienza.testo}»` : 'Dalla richiesta',
+          mancante: 'Non indicato: da completare (altrimenti la voce entra con il rigo da completare nel computo)',
+          modificato: 'Valore modificato',
+        }[tipo],
+        onchange: (e) => cambiaMisura(l, i, p.nome, e.target.value),
+      });
+      return h('label', { class: 'ai-parametro' }, h('span', null, p.nome), input, UNITA[p.unita] ? h('span', { class: 'ai-unita' }, UNITA[p.unita]) : null,
+        p.provenienza.tipo === 'ipotesi' && tipo === 'ipotesi' ? h('small', null, p.provenienza.id) : null);
+    }));
+}
+
+function cambiaMisura(l, i, nome, valore) {
+  const righe = locale.misure[l.id] ?? l.righe.map(() => ({}));
+  righe[i] = { ...righe[i], [nome]: valore.trim() };
+  locale.misure[l.id] = righe;
+  const input = elVista?.querySelector(`input[name="misura-${CSS.escape(l.id)}-${i}-${CSS.escape(nome)}"]`);
+  if (input) {
+    input.classList.remove('utente', 'ipotesi', 'mancante');
+    input.classList.add(valore.trim() ? 'modificato' : 'mancante');
+  }
+  aggiornaAnteprima();
+}
+
+function rigaOpzione(l, o, spunte) {
+  const chiave = `${l.id}|${o.codice}`;
+  const [pert, classe] = PERTINENZE[o.pertinenza] ?? [o.pertinenza, 'neutra'];
+  const spunta = h('input', {
+    type: 'checkbox', name: `opzione-${l.id}-${o.codice}`, checked: spunte.has(o.codice),
+    'aria-label': `Aggiungere ${o.codice} per ${l.id}`,
+    onchange: (e) => {
+      const s = locale.spunte[l.id] ?? new Set();
+      if (e.target.checked) s.add(o.codice); else s.delete(o.codice);
+      locale.spunte[l.id] = s;
+      aggiornaValori();
+      aggiornaAnteprima();
+    },
+  });
+  return h('tr', { class: ['ai-opzione', spunte.has(o.codice) && 'spuntata'], dataset: { lavorazione: l.id, codice: o.codice } },
+    h('td', { class: 'spunta' }, spunta),
+    h('td', null, h('span', { class: ['etichetta', ...classe.split(' ')] }, pert)),
+    h('td', { title: o.descrizione_estesa },
+      h('span', { class: 'mono' }, o.codice), ' ', o.descrizione,
+      locale.aggiunte.has(chiave) ? h('span', { class: 'etichetta ok' }, 'aggiunta') : null,
+      o.motivazione ? h('div', { class: 'ai-motivazione' }, o.motivazione) : null,
+      o.misura_manuale ? h('div', { class: 'ai-motivazione avviso' }, `Unità «${o.unita_misura}»: la quantità va inserita nel computo.`) : null,
+      o.prezzo_prezzario ? h('div', { class: 'ai-motivazione' }, `Già nell'elenco prezzi: vale ${numero(o.prezzo, 2)} € (prezzario ${numero(o.prezzo_prezzario, 2)} €).`) : null),
+    h('td', { class: 'num ai-quantita' }, ''),
+    h('td', null, o.unita_misura),
+    h('td', { class: 'num' }, numero(o.prezzo, 2)),
+    h('td', { class: 'num ai-importo' }, ''));
+}
+
+function barraScelte() {
+  return h('div', { class: 'ai-barra-scelte', role: 'status' },
+    h('span', { class: 'ai-conteggio' }),
+    h('span', { class: 'ai-totali-scelte' }),
+    h('span', { class: 'spinge' }),
+    h('button', { class: 'pulsante primario', name: 'aggiungi-scelte', onclick: applica }, 'Aggiungi al computo'),
+    h('button', { class: 'pulsante', name: 'scarta-proposta', onclick: () => { locale.risultato = null; ridisegna(); } }, 'Chiudi la proposta'));
+}
+
+/** Aggiorna, senza ridisegnare, quantità, importi, spunte e barra delle scelte. */
+function aggiornaValori() {
+  if (!elVista || !locale.risultato?.proposta) return;
+  const valori = new Map((locale.anteprima?.opzioni ?? []).map((v) => [`${v.lavorazione}|${v.codice}`, v]));
+  for (const tr of elVista.querySelectorAll('tr.ai-opzione')) {
+    const v = valori.get(`${tr.dataset.lavorazione}|${tr.dataset.codice}`);
+    const q = tr.querySelector('.ai-quantita');
+    const i = tr.querySelector('.ai-importo');
+    q.textContent = v?.quantita ? numero(v.quantita, decimali(v.quantita)) : '—';
+    i.textContent = v?.importo ? numero(v.importo, 2) : '—';
+    q.title = v?.da_completare ? 'Misure da completare: la voce entrerebbe con quantità zero' : '';
+    q.classList.toggle('da-completare', !!v?.da_completare);
+    tr.classList.toggle('spuntata', !!locale.spunte[tr.dataset.lavorazione]?.has(tr.dataset.codice));
+  }
+  const n = spuntate();
+  const conteggio = elVista.querySelector('.ai-conteggio');
+  const totali = elVista.querySelector('.ai-totali-scelte');
+  const pulsante = elVista.querySelector('button[name="aggiungi-scelte"]');
+  if (!conteggio || !totali || !pulsante) return;
+  conteggio.textContent = n === 0 ? 'Nessuna voce spuntata' : n === 1 ? '1 voce spuntata' : `${n} voci spuntate`;
+  const esito = locale.anteprima?.esito;
+  if (locale.erroreScelte) sostituisci(totali, h('span', { class: 'errore' }, locale.erroreScelte));
+  else if (n && esito) {
+    sostituisci(totali, esito.totali.map((t) => h('span', null, `${t.computo}: ${euro(t.prima)} → `, h('strong', null, euro(t.dopo)))));
+  } else sostituisci(totali);
+  pulsante.disabled = !n || !!locale.erroreScelte || !!locale.inCorso;
+  pulsante.textContent = n ? `Aggiungi al computo (${n})` : 'Aggiungi al computo';
 }
 
 /** Decimali da mostrare: quelli del valore, da `minimo` a 4. */
@@ -271,13 +433,28 @@ function aggiungiRisposte(domande) {
 }
 
 async function applica() {
-  const n = locale.risultato?.prova?.voci?.length ?? 0;
-  const computo = locale.risultato?.prova?.computo ?? locale.computo;
-  const r = await agisci({ richiesta: 'assistente_applica' });
+  let s;
+  try {
+    s = scelte();
+  } catch (e) {
+    locale.erroreScelte = e.message;
+    aggiornaValori();
+    return;
+  }
+  const computo = locale.anteprima?.computo ?? locale.computo;
+  const r = await agisci({ richiesta: 'assistente_applica', scelte: s });
   if (!r) return;
-  locale.risultato = null;
-  notifica(`${n === 1 ? 'Una voce aggiunta' : `${n} voci aggiunte`} a «${computo}»`, 'ok', { testo: 'Vai al computo', fn: () => vai('computo', { computo, ultima: true }) }, 8000);
+  // Le voci aggiunte restano visibili e non più spuntate: si può continuare a scegliere.
+  for (const v of r.voci) {
+    locale.aggiunte.add(`${v.lavorazione}|${v.codice}`);
+    locale.spunte[v.lavorazione]?.delete(v.codice);
+  }
+  const n = r.voci.length;
+  const daCompletare = r.voci.filter((v) => v.da_completare).length;
+  notifica(`${n === 1 ? 'Una voce aggiunta' : `${n} voci aggiunte`} a «${computo}»${daCompletare ? `, ${daCompletare} con misure da completare` : ''}`,
+    'ok', { testo: 'Vai al computo', fn: () => vai('computo', { computo, ultima: true }) }, 8000);
   ridisegna();
+  aggiornaAnteprima();
 }
 
 // ---------------------------------------------------------------------------

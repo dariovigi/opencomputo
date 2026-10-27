@@ -1,7 +1,9 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-10-27. Ultimo lavoro, sul ramo `assistente`: la **fase 4
-dell'assistente AI** (vista «Assistente AI» nell'interfaccia; ADR 0025), dopo la fase 3
+Ultimo aggiornamento: 2026-10-27. Ultimo lavoro, sul ramo `assistente`: le **voci
+alternative** dell'assistente AI (opzioni in ordine di pertinenza da spuntare, misure
+modificabili; ADR 0025, decisioni 29–33), dopo la fase 4 (vista «Assistente AI»
+nell'interfaccia), la fase 3
 (provider OpenAI e Anthropic, portachiavi, consenso, ricerca ibrida, servizio JSON e riga
 di comando) e la fase 2 (listini CSV e JSON,
 ricerca nei prezzari, validazione delle risposte del modello e traduzione in comandi),
@@ -25,6 +27,54 @@ Restano aperti:
 * il trascinamento tra finestre sui sistemi reali (WebView2, WKWebView, WebKitGTK);
 * il confronto con documenti PriMus reali (serve un export XPWE con voci);
 * la prova su macOS e Windows.
+
+## Assistente AI: voci alternative da scegliere
+
+Chiesto dal titolare il 2026-10-27 dopo la prova sul Mac: troppe lavorazioni escluse per
+informazioni mancanti e troppi avvisi; per ogni lavorazione le alternative in ordine di
+probabilità, da spuntare e aggiungere al computo, ripetendo. Scelte del titolare: misure
+modificabili, fino a 5 opzioni con pertinenza, preselezionata la più pertinente.
+
+### Cosa è cambiato
+
+* **Risposta del modello** (schema, prompt): per lavorazione `chiarezza` (`chiara` o
+  `da_precisare` con che cosa manca), righi di misura comuni, fino a 5 `opzioni` con
+  pertinenza e motivazione; valori `mancante` ammessi. Niente più ruoli né `NESSUNO`.
+* **Validazione** (`proposta`) riscritta: opzioni ordinate e controllate, valori non
+  validi da completare invece di escludere la lavorazione, lavorazioni senza voce solo
+  se non resta nessuna opzione, dettagli tecnici con gravità «informazione».
+* **Nuovo modulo `scelta`**: dalle scelte dell'utente (codici spuntati, misure corrette)
+  ai comandi; righi con valori mancanti vuoti, mai quantità parziali.
+* **`verifica::anteprima`**: valori di tutte le opzioni con le misure correnti e prova
+  delle scelte.
+* **Flusso**: si ferma con le domande solo se non riconosce nessuna lavorazione.
+* **Servizio**: `assistente_anteprima {scelte}`; `assistente_applica {scelte}` (senza:
+  le preselezionate) lascia la proposta disponibile; la proposta riporta `anteprima`
+  invece di `prova`.
+* **Interfaccia**: per lavorazione misure in campi modificabili (ipotesi in arancione,
+  mancanti tratteggiate), tabella «Alternative proposte» o «Opzioni possibili» con
+  spunte, pertinenza, quantità e importi aggiornati dal motore; barra fissa con le voci
+  spuntate, il totale prima e dopo e «Aggiungi al computo»; voci aggiunte segnate;
+  dettagli della verifica chiusi.
+* **Prezzario di prova**: 4 voci in più (parquet, laminato, pittura ai silicati, smalto)
+  per avere alternative vere; 26 voci.
+
+### Verifica (Rust 1.97.0, Linux, Chromium 1243)
+
+* `cargo test --workspace`: 391 passati, 0 falliti, 9 ignorati. Nuovi o riscritti i test
+  della proposta: bagno con pavimento da precisare (1.433,82 € con le voci preselezionate,
+  1.745,82 € scegliendo il gres, due opzioni sulla stessa lavorazione 519,00 €), opzioni
+  ordinate, ripetute, inventate, di altra grandezza o a misura manuale, limite di 5,
+  valori da completare e misure corrette (311,04 €), scelte non valide, righi scartati e
+  lavorazioni senza voce, flusso che continua con la lavorazione riconosciuta.
+* `cargo clippy` con e senza `--all-features`, `cargo fmt --check`, `cargo deny check`:
+  puliti.
+* `npm test`: 41 scenari passati, tra cui alternative con spunta di due voci, misura
+  corretta (168,00 €), valore non valido che blocca l'aggiunta, proposta che resta aperta
+  e terza voce aggiunta; ipotesi modificata; pavimento da precisare senza preselezione,
+  superficie indicata (parquet, 1.560,00 €) o lasciata vuota (rigo da completare).
+* **Non verificato**: la qualità delle opzioni con il modello vero (dipende dal prompt e
+  dal prezzario reale): da provare sul Mac.
 
 ## Assistente AI, fase 4: interfaccia
 

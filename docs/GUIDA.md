@@ -742,23 +742,37 @@ La vista **Assistente AI** ha tre schede.
   OpenAI e Anthropic (si incollano nel campo e si salvano nel portachiavi del sistema;
   dopo il salvataggio non sono più visibili), modelli e limiti di token.
 
-La proposta mostra:
+La proposta elenca le **lavorazioni** riconosciute nella richiesta. Per ciascuna:
 
-* l'esito: **Completa**, **Da rivedere** (ipotesi, esclusioni, avvisi o informazioni
-  mancanti) o **Nessuna voce proposta**;
-* per ogni lavorazione la voce scelta con quantità, prezzo e importo **calcolati da
-  OpenComputo** come se la voce fosse già nel computo, i righi con la forma e i
-  parametri (quelli in arancione sono **ipotesi**: il valore non era nella richiesta; il
-  suggerimento dice quale ipotesi), e il motivo della scelta;
-* il totale del computo prima e dopo, le alternative non scelte, le lavorazioni escluse
-  con il motivo, le ipotesi con il loro impatto, le informazioni mancanti e gli avvisi;
-* i token consumati.
+* le **misure** (righi con forma e parametri), comuni a tutte le sue voci, in campi
+  modificabili: i valori presi dalla richiesta, quelli **ipotizzati** dall'assistente (in
+  arancione: il suggerimento dice quale ipotesi) e quelli **da completare** (bordo
+  tratteggiato rosso), che si possono scrivere o correggere;
+* le voci del prezzario possibili, al massimo cinque, **dalla più alla meno pertinente**
+  (pertinenza alta, media, bassa) con il motivo di ognuna e quantità, prezzo e importo
+  **calcolati da OpenComputo** con le misure correnti:
+  * **Alternative proposte**, quando la richiesta basta a capire la voce: la più
+    pertinente è già spuntata;
+  * **Opzioni possibili**, quando manca un'informazione per scegliere (materiale, tipo,
+    finitura…): la lavorazione è segnata «Da precisare», con che cosa manca, e nessuna
+    voce è spuntata.
 
-Il progetto non cambia finché non si preme **Applica al computo**: le voci vengono
-aggiunte in un solo passo, con nelle note la lavorazione, la motivazione e le ipotesi, e
-si annullano come ogni altra modifica. **Scarta** dimentica la proposta. Se mancano dati
-indispensabili, l'assistente fa le domande invece di proporre: **Aggiungi le domande alla
-richiesta** le copia nel testo, da completare con le risposte prima di riprovare.
+Si spuntano le voci da aggiungere, anche più di una per lavorazione (entrano tutte, con le
+stesse misure), e la barra in fondo mostra quante sono e il totale del computo prima e
+dopo. **Aggiungi al computo** le aggiunge in un solo passo, annullabile come ogni altra
+modifica, con nelle note la lavorazione, il motivo della scelta e le ipotesi. La proposta
+resta aperta: le voci aggiunte sono segnate «aggiunta» e si può continuare a scegliere,
+oppure cambiare la richiesta e chiedere una nuova proposta.
+
+Se una misura resta vuota, la voce entra con un rigo **da completare** (quantità zero, i
+valori noti nella descrizione del rigo): mai con una quantità parziale. Lo stesso per le
+voci con un'unità di misura senza forme (ore, m²/mese…).
+
+Sotto le lavorazioni compaiono quelle **senza voce nel prezzario**, le ipotesi con il
+loro impatto, le **domande per precisare** (**Aggiungi le domande alla richiesta** le
+copia nel testo, da completare con le risposte), ciò che è **da verificare** e, chiusi,
+i dettagli tecnici della verifica, poi i token consumati. Solo se nella richiesta non si
+riconosce nessuna lavorazione l'assistente fa le domande invece di proporre.
 
 Gli errori dei servizi (chiave rifiutata, credito esaurito, rete) compaiono come
 notifiche, con il collegamento alle impostazioni quando serve.
@@ -840,14 +854,17 @@ opencomputo assistente proponi lavori.ocp --prezzario prezzario-regionale.dcf \
     "Tinteggiatura di due pareti di 4 x 3 m e di un soffitto di 4 x 5 m"
 ```
 
-La risposta contiene le lavorazioni riconosciute, le voci scelte con la motivazione, le
-**ipotesi** (valori non presenti nella richiesta), le **informazioni mancanti**, gli
-avvisi e la prova dei comandi sul progetto (totali prima e dopo). Il file non cambia. Se
-mancano dati indispensabili l'esito è `da_chiarire`, con le domande da cui ripartire.
+La risposta contiene le lavorazioni riconosciute, ognuna con le misure e le voci possibili
+in ordine di pertinenza (`proposta.lavorazioni[].opzioni`, con `preselezionata` per la più
+pertinente delle lavorazioni chiare), le **ipotesi**, le **informazioni mancanti**, gli
+avvisi e l'anteprima: valori di ogni opzione e prova delle voci preselezionate sul
+progetto. Il file non cambia. Se non si riconosce nessuna lavorazione l'esito è
+`da_chiarire`, con le domande da cui ripartire.
 
-Con `--applica` la proposta, se la prova è riuscita, viene eseguita e il progetto salvato;
-le voci aggiunte riportano nelle note la lavorazione, la motivazione e le ipotesi, e si
-annullano come ogni altra modifica.
+Con `--applica` le voci preselezionate, se la prova è riuscita, vengono aggiunte e il
+progetto salvato. Per scegliere altre voci o correggere le misure si usa il servizio JSON
+(`assistente_anteprima` e `assistente_applica` con le `scelte`: per ogni lavorazione
+`{"lavorazione": "L01", "codici": [...], "misure": [{"L": "4", "B": "2,70"}]}`).
 
 Codice di uscita 4: errore dell'assistente (consenso mancante, chiave assente o rifiutata,
 credito esaurito, rete, risposta del modello inutilizzabile). Il campo `motivo`

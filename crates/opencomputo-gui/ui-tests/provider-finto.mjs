@@ -4,11 +4,14 @@
 // OPENCOMPUTO_PROVIDER_DI_PROVA.
 //
 // Il «modello» finto:
-// * analisi: una lavorazione di tinteggiatura; se la richiesta parla di «pavimento»
-//   senza misure, chiede la superficie (esito `chiedi`);
-// * selezione: sceglie, tra i candidati davvero ricevuti, quello con «idropittura» nella
-//   descrizione, con un rigo rettangolo dai numeri della richiesta; con «perimetro di
-//   N m» l'altezza diventa un'ipotesi dichiarata;
+// * analisi: una lavorazione di tinteggiatura; con «pavimento» una lavorazione di
+//   pavimento, con la domanda sulla superficie; con «ciao» nessuna lavorazione (esito
+//   `chiedi`);
+// * selezione: propone, tra i candidati davvero ricevuti, idropittura (alta), smalto
+//   (media) e silicati (bassa) per la tinteggiatura, con un rigo rettangolo dai numeri
+//   della richiesta; con «perimetro di N m» l'altezza diventa un'ipotesi dichiarata; per
+//   il pavimento, materiale da precisare con le tre voci di pavimento e superficie da
+//   completare;
 // * una richiesta che contiene «chiave sbagliata» riceve 401;
 // * con lo strumento forzato risponde con un blocco `tool_use`.
 
@@ -26,53 +29,87 @@ function vettore(testo, dimensioni) {
 }
 
 function analisi(utente) {
-  if (/pavimento/i.test(utente) && !/\d/.test(utente)) {
+  if (/ciao/i.test(utente)) {
+    return { esito: 'chiedi', lavorazioni: [], informazioni_mancanti: [{ domanda: 'Quali lavori servono?', bloccante: true, lavorazioni: [] }] };
+  }
+  if (/pavimento/i.test(utente)) {
     return {
-      esito: 'chiedi',
+      esito: 'procedi',
       lavorazioni: [{ id: 'L01', descrizione: 'Pavimento', query_ricerca: 'pavimento', dimensione_attesa: 'superficie' }],
-      informazioni_mancanti: [{ domanda: 'Quanto misura la superficie del pavimento?', bloccante: true, lavorazioni: ['L01'] }],
+      informazioni_mancanti: [{ domanda: 'Quanto misura la superficie del pavimento?', bloccante: false, lavorazioni: ['L01'] }],
     };
   }
   return {
     esito: 'procedi',
-    lavorazioni: [{ id: 'L01', descrizione: 'Tinteggiatura della parete', query_ricerca: 'tinteggiatura idropittura pareti', dimensione_attesa: 'superficie' }],
+    lavorazioni: [{ id: 'L01', descrizione: 'Tinteggiatura della parete', query_ricerca: 'tinteggiatura idropittura smalto pittura pareti', dimensione_attesa: 'superficie' }],
     informazioni_mancanti: [],
   };
+}
+
+const n1 = { nome: 'N', valore: '1', unita: 'n', provenienza: 'utente', rif_ipotesi: '' };
+
+function opzioni(candidati, regole) {
+  const out = [];
+  for (const [test, pertinenza, motivazione] of regole) {
+    const c = candidati.find((x) => test(x.descrizione.toLowerCase()));
+    if (c) out.push({ candidato: c.handle, pertinenza, motivazione });
+  }
+  return out;
 }
 
 function selezione(utente) {
   const i = utente.indexOf('handle):\n') + 'handle):\n'.length;
   const candidati = JSON.parse(utente.slice(i));
-  const c = candidati.find((x) => x.descrizione.toLowerCase().includes('idropittura'));
-  const perimetro = utente.match(/perimetro di (\d+) m/);
-  if (perimetro) {
-    // Altezza non indicata: ipotesi dichiarata, esito da rivedere.
+  const richiesta = utente.slice(0, utente.indexOf('Lavorazioni individuate'));
+  if (/pavimento/i.test(richiesta)) {
     return {
-      esito: 'provvisorio',
       lavorazioni: [{
-        id: 'L01', descrizione: 'Tinteggiatura delle pareti', candidato: c ? c.handle : 'NESSUNO', ruolo: 'principale',
-        gruppo_alternativa: '', complementare_di: '', motivazione: 'idropittura su pareti interne',
+        id: 'L01', descrizione: 'Pavimento', chiarezza: 'da_precisare', da_precisare: 'materiale del pavimento non indicato',
+        righe: [{ descrizione: 'stanza', forma: 'superficie', segno: 'positivo', parametri: [
+          n1, { nome: 'A', valore: '', unita: 'm2', provenienza: 'mancante', rif_ipotesi: '' },
+        ] }],
+        opzioni: opzioni(candidati, [
+          [(d) => d.startsWith('pavimento in piastrelle'), 'alta', 'gres porcellanato, il più comune'],
+          [(d) => d.includes('parquet'), 'media', 'legno prefinito'],
+          [(d) => d.includes('laminato'), 'bassa', 'laminato flottante, economico'],
+        ]),
+      }],
+      ipotesi: [],
+      informazioni_mancanti: [{ domanda: 'Quale materiale per il pavimento?', bloccante: false, lavorazioni: ['L01'] }],
+    };
+  }
+  const tinte = opzioni(candidati, [
+    [(d) => d.includes('idropittura'), 'alta', 'idropittura su pareti interne'],
+    [(d) => d.includes('smalto'), 'media', 'smalto murale, più resistente'],
+    [(d) => d.includes('silicati'), 'bassa', 'per esterni'],
+  ]);
+  const perimetro = richiesta.match(/perimetro di (\d+) m/);
+  if (perimetro) {
+    // Altezza non indicata: ipotesi dichiarata.
+    return {
+      lavorazioni: [{
+        id: 'L01', descrizione: 'Tinteggiatura delle pareti', chiarezza: 'chiara', da_precisare: '',
         righe: [{ descrizione: 'pareti', forma: 'rettangolo', segno: 'positivo', parametri: [
-          { nome: 'N', valore: '1', unita: 'n', provenienza: 'utente', rif_ipotesi: '' },
+          n1,
           { nome: 'L', valore: perimetro[1], unita: 'm', provenienza: 'utente', rif_ipotesi: '' },
           { nome: 'B', valore: '2.70', unita: 'm', provenienza: 'ipotesi', rif_ipotesi: 'I01' },
         ] }],
+        opzioni: tinte,
       }],
       ipotesi: [{ id: 'I01', testo: 'altezza dei locali 2,70 m', impatto: 'medio' }],
       informazioni_mancanti: [{ domanda: 'Qual è l\'altezza dei locali?', bloccante: false, lavorazioni: ['L01'] }],
     };
   }
-  const numeri = (utente.match(/(\d+(?:[.,]\d+)?)\s*x\s*(\d+(?:[.,]\d+)?)/) ?? [null, '4', '3']).slice(1);
+  const numeri = (richiesta.match(/(\d+(?:[.,]\d+)?)\s*x\s*(\d+(?:[.,]\d+)?)/) ?? [null, '4', '3']).slice(1);
   return {
-    esito: 'completo',
     lavorazioni: [{
-      id: 'L01', descrizione: 'Tinteggiatura della parete', candidato: c ? c.handle : 'NESSUNO', ruolo: 'principale',
-      gruppo_alternativa: '', complementare_di: '', motivazione: 'idropittura su pareti interne',
+      id: 'L01', descrizione: 'Tinteggiatura della parete', chiarezza: 'chiara', da_precisare: '',
       righe: [{ descrizione: 'parete', forma: 'rettangolo', segno: 'positivo', parametri: [
-        { nome: 'N', valore: '1', unita: 'n', provenienza: 'utente', rif_ipotesi: '' },
+        n1,
         { nome: 'L', valore: numeri[0], unita: 'm', provenienza: 'utente', rif_ipotesi: '' },
         { nome: 'B', valore: numeri[1], unita: 'm', provenienza: 'utente', rif_ipotesi: '' },
       ] }],
+      opzioni: tinte,
     }],
     ipotesi: [],
     informazioni_mancanti: [],

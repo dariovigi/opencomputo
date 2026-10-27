@@ -1,113 +1,150 @@
-//! Prova della proposta nella sessione, senza modificare il progetto.
+//! Prova e anteprima delle scelte nella sessione, senza modificare il progetto.
 //!
-//! I comandi della proposta passano dalla stessa [`Sessione`] della GUI, della CLI e
-//! degli agenti: quantità e importi sono calcolati dal core con le regole di
-//! arrotondamento del progetto, e una proposta che introdurrebbe errori di validazione è
-//! rifiutata. L'esecuzione vera (`Sessione::esegui`) resta un'azione dell'utente.
+//! I comandi passano dalla stessa [`Sessione`] della GUI, della CLI e degli agenti:
+//! quantità e importi sono calcolati dal core con le regole di arrotondamento del
+//! progetto, e una scelta che introdurrebbe errori di validazione è rifiutata.
+//! L'esecuzione vera (`Sessione::esegui`) resta un'azione dell'utente.
 
 use std::collections::BTreeSet;
 
 use opencomputo_application::{Comando, ErroreApplicazione, Esito, Politica, Sessione, viste};
-use opencomputo_core::numeri::{Importo, Prezzo, Quantita};
+use opencomputo_core::numeri::{Importo, Quantita};
 use serde::Serialize;
 
 use crate::proposta::Proposta;
+use crate::scelta::{self, ErroreScelta, Scelta, VoceScelta};
 
-/// Prova i comandi della proposta.
-///
-/// # Errors
-/// Proposta senza comandi, prezzario non caricato con il nome usato nella proposta,
-/// comando non applicabile, nuovi errori di validazione.
-pub fn prova(sessione: &Sessione, proposta: &Proposta) -> Result<Esito, ErroreApplicazione> {
-    sessione.prova(&proposta.comandi)
+/// Errore di una scelta come errore dell'applicazione.
+#[must_use]
+pub fn errore_scelta(e: &ErroreScelta) -> ErroreApplicazione {
+    ErroreApplicazione::Assistente {
+        motivo: match e {
+            ErroreScelta::NessunaScelta => "nessuna_scelta",
+            _ => "scelta_non_valida",
+        }
+        .into(),
+        messaggio: e.to_string(),
+    }
 }
 
-/// Voce che la proposta aggiungerebbe, con quantità e importo calcolati dal core.
+/// Comandi delle scelte.
+///
+/// # Errors
+/// Scelte non valide.
+pub fn comandi(
+    sessione: &Sessione,
+    proposta: &Proposta,
+    scelte: &[Scelta],
+) -> Result<(Vec<Comando>, Vec<VoceScelta>), ErroreApplicazione> {
+    scelta::comandi(proposta, scelte, sessione.progetto()).map_err(|e| errore_scelta(&e))
+}
+
+/// Prova le scelte.
+///
+/// # Errors
+/// Scelte non valide, prezzario non caricato con il nome della proposta, comando non
+/// applicabile, nuovi errori di validazione.
+pub fn prova(
+    sessione: &Sessione,
+    proposta: &Proposta,
+    scelte: &[Scelta],
+) -> Result<Esito, ErroreApplicazione> {
+    sessione.prova(&comandi(sessione, proposta, scelte)?.0)
+}
+
+/// Valori di un'opzione con le misure correnti.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct VoceAnteprima {
-    /// Lavorazione della proposta.
+pub struct ValoriOpzione {
+    /// Lavorazione.
     pub lavorazione: String,
     /// Codice della voce.
     pub codice: String,
-    /// Descrizione breve.
-    pub descrizione: String,
-    /// Unità di misura.
-    pub unita_misura: String,
-    /// Prezzo applicato (quello dell'elenco se la voce c'era già).
-    pub prezzo: Prezzo,
     /// Quantità (assente se il core non la può calcolare).
     pub quantita: Option<Quantita>,
     /// Importo.
     pub importo: Option<Importo>,
+    /// Qualche rigo entrerebbe vuoto.
+    pub da_completare: bool,
 }
 
-/// Anteprima: esito della prova e voci che verrebbero aggiunte.
+/// Anteprima: valori di ogni opzione e prova delle opzioni scelte.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Anteprima {
-    /// Esito della prova con la politica della sessione.
-    pub esito: Esito,
     /// Computo di destinazione.
     pub computo: String,
-    /// Voci aggiunte, nell'ordine delle lavorazioni incluse.
-    pub voci: Vec<VoceAnteprima>,
+    /// Valori di tutte le opzioni di tutte le lavorazioni, con le misure correnti.
+    pub opzioni: Vec<ValoriOpzione>,
+    /// Voci che le scelte aggiungerebbero.
+    pub scelte: Vec<VoceScelta>,
+    /// Esito della prova delle scelte (assente se non è scelto nulla o la prova fallisce).
+    pub esito: Option<Esito>,
+    /// Motivo per cui le scelte non si possono applicare.
+    pub errore: Option<ErroreApplicazione>,
 }
 
-/// Prova i comandi e calcola le voci che verrebbero aggiunte: i comandi sono eseguiti su
+/// Prova le scelte e calcola i valori di ogni opzione: tutte le opzioni sono aggiunte a
 /// una copia del progetto, con lo stesso prezzario; il progetto della sessione non
 /// cambia. Quantità e importi vengono dalle viste del core, mai ricalcolati qui.
 ///
 /// # Errors
-/// Come [`prova`].
+/// Misure non valide; computo inesistente.
 pub fn anteprima(
     sessione: &Sessione,
     proposta: &Proposta,
+    scelte: &[Scelta],
 ) -> Result<Anteprima, ErroreApplicazione> {
-    let esito = prova(sessione, proposta)?;
-    let computo = proposta
-        .comandi
-        .iter()
-        .find_map(|c| match c {
-            Comando::AggiungiVoceComputo { computo, .. } => Some(computo.clone()),
-            _ => None,
-        })
-        .flatten();
-    let prima = viste::computo(sessione.progetto(), computo.as_deref())?;
+    let computo = proposta.computo.as_deref();
+    let prima = viste::computo(sessione.progetto(), computo)?;
     let esistenti: BTreeSet<_> = prima.voci.iter().map(|v| v.id).collect();
 
-    // Copia della sessione con i prezzari usati dai comandi; politica permissiva: la
-    // prova vera è quella sopra, qui servono solo i numeri.
-    let mut copia = Sessione::new(sessione.progetto().clone()).con_politica(Politica {
-        rifiuta_nuovi_errori: false,
-        ..Politica::default()
-    });
-    for c in &proposta.comandi {
-        if let Comando::CopiaDaPrezzario { prezzario, .. } = c
-            && let Some((_, p)) = sessione.prezzari().iter().find(|(n, _)| n == prezzario)
+    let tutte = scelta::tutte(proposta, scelte);
+    let (comandi_tutti, voci_tutte) = match scelta::comandi(proposta, &tutte, sessione.progetto()) {
+        Ok(c) => c,
+        Err(ErroreScelta::NessunaScelta) => (Vec::new(), Vec::new()),
+        Err(e) => return Err(errore_scelta(&e)),
+    };
+    let mut opzioni = Vec::new();
+    if !comandi_tutti.is_empty() {
+        // Politica permissiva: servono solo i numeri, la prova vera è sotto.
+        let mut copia = Sessione::new(sessione.progetto().clone()).con_politica(Politica {
+            rifiuta_nuovi_errori: false,
+            ..Politica::default()
+        });
+        if let Some((_, p)) = sessione
+            .prezzari()
+            .iter()
+            .find(|(n, _)| *n == proposta.nome_prezzario)
         {
-            copia.carica_prezzario(prezzario, p.clone());
+            copia.carica_prezzario(&proposta.nome_prezzario, p.clone());
         }
+        copia.esegui(&comandi_tutti)?;
+        let dopo = viste::computo(copia.progetto(), computo)?;
+        opzioni = dopo
+            .voci
+            .iter()
+            .filter(|v| !esistenti.contains(&v.id))
+            .zip(&voci_tutte)
+            .map(|(v, s)| ValoriOpzione {
+                lavorazione: s.lavorazione.clone(),
+                codice: s.codice.clone(),
+                quantita: v.quantita,
+                importo: v.importo,
+                da_completare: s.da_completare,
+            })
+            .collect();
     }
-    copia.esegui(&proposta.comandi)?;
-    let dopo = viste::computo(copia.progetto(), computo.as_deref())?;
-    let incluse = proposta.lavorazioni.iter().filter(|l| l.inclusa);
-    let voci = dopo
-        .voci
-        .iter()
-        .filter(|v| !esistenti.contains(&v.id))
-        .zip(incluse)
-        .map(|(v, l)| VoceAnteprima {
-            lavorazione: l.id.clone(),
-            codice: v.codice.clone(),
-            descrizione: v.descrizione_breve.clone(),
-            unita_misura: v.unita_misura.clone(),
-            prezzo: v.prezzo,
-            quantita: v.quantita,
-            importo: v.importo,
-        })
-        .collect();
+    let (esito, voci, errore) = match comandi(sessione, proposta, scelte) {
+        Ok((c, voci)) => match sessione.prova(&c) {
+            Ok(e) => (Some(e), voci, None),
+            Err(e) => (None, voci, Some(e)),
+        },
+        Err(e) => (None, Vec::new(), Some(e)),
+    };
     Ok(Anteprima {
+        computo: prima.nome,
+        opzioni,
+        scelte: voci,
         esito,
-        computo: dopo.nome,
-        voci,
+        errore,
     })
 }

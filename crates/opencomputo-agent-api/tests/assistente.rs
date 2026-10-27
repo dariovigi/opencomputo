@@ -97,26 +97,30 @@ fn analisi() -> Value {
 fn selezione(utente: &str) -> Value {
     let i = utente.find("handle):\n").unwrap() + "handle):\n".len();
     let candidati: Vec<Value> = serde_json::from_str(&utente[i..]).unwrap();
-    let handle = candidati
-        .iter()
-        .find(|c| {
+    // Opzioni: l'idropittura per prima, poi le altre tinteggiature.
+    let mut opzioni: Vec<Value> = Vec::new();
+    for (parola, pertinenza) in [("idropittura", "alta"), ("smalto", "media")] {
+        if let Some(c) = candidati.iter().find(|c| {
             c["descrizione"]
                 .as_str()
                 .unwrap()
                 .to_lowercase()
-                .contains("idropittura")
-        })
-        .map_or("NESSUNO", |c| c["handle"].as_str().unwrap());
+                .contains(parola)
+        }) {
+            opzioni.push(
+                json!({"candidato": c["handle"], "pertinenza": pertinenza, "motivazione": parola}),
+            );
+        }
+    }
     json!({
-        "esito": "completo",
         "lavorazioni": [{
-            "id": "L01", "descrizione": "Tinteggiatura della parete", "candidato": handle, "ruolo": "principale",
-            "gruppo_alternativa": "", "complementare_di": "", "motivazione": "idropittura su pareti",
+            "id": "L01", "descrizione": "Tinteggiatura della parete", "chiarezza": "chiara", "da_precisare": "",
             "righe": [{"descrizione": "parete", "forma": "rettangolo", "segno": "positivo", "parametri": [
                 {"nome": "N", "valore": "1", "unita": "n", "provenienza": "utente", "rif_ipotesi": ""},
                 {"nome": "L", "valore": "4", "unita": "m", "provenienza": "utente", "rif_ipotesi": ""},
                 {"nome": "B", "valore": "3", "unita": "m", "provenienza": "utente", "rif_ipotesi": ""}
-            ]}]
+            ]}],
+            "opzioni": opzioni
         }],
         "ipotesi": [],
         "informazioni_mancanti": []
@@ -449,8 +453,8 @@ fn indicizzazione_con_cache_e_ricerca_ibrida() {
         &mut s,
         json!({"richiesta": "assistente_indicizza", "prezzario": "prova"}),
     );
-    assert_eq!(r["rapporto"]["voci"], 22);
-    assert_eq!(r["rapporto"]["calcolate"], 22);
+    assert_eq!(r["rapporto"]["voci"], 26);
+    assert_eq!(r["rapporto"]["calcolate"], 26);
     assert_eq!(r["spazio"]["dimensioni"], DIM);
     let file = PathBuf::from(r["file"].as_str().unwrap());
     assert!(file.starts_with(d.join("cache")) && file.exists());
@@ -475,7 +479,7 @@ fn indicizzazione_con_cache_e_ricerca_ibrida() {
             r["rapporto"]["calcolate"].as_u64(),
             r["rapporto"]["riusate"].as_u64()
         ),
-        (Some(0), Some(22))
+        (Some(0), Some(26))
     );
     assert_eq!(finto.ricevute("/embeddings").len(), 1);
 
@@ -521,7 +525,7 @@ fn indicizzazione_con_cache_e_ricerca_ibrida() {
             r["rapporto"]["calcolate"].as_u64(),
             r["rapporto"]["rimosse"].as_u64()
         ),
-        (Some(21), Some(20), Some(1), Some(1)),
+        (Some(25), Some(24), Some(1), Some(1)),
         "{r:#}"
     );
     assert_ne!(PathBuf::from(r["file"].as_str().unwrap()), file);
@@ -602,7 +606,24 @@ fn proposta_provata_e_applicata() {
             .unwrap()
             .contains("solo testuale")
     );
-    assert_eq!(r["prova"]["ok"], true, "{r:#}");
+    // Opzioni: la più pertinente preselezionata, anteprima di entrambe.
+    let opzioni = r["proposta"]["lavorazioni"][0]["opzioni"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        opzioni
+            .iter()
+            .map(|o| (
+                o["codice"].as_str().unwrap(),
+                o["preselezionata"].as_bool().unwrap()
+            ))
+            .collect::<Vec<_>>(),
+        [("T.01", true), ("T.03", false)]
+    );
+    let a = &r["anteprima"];
+    assert_eq!(a["errore"], Value::Null, "{r:#}");
+    assert_eq!(a["opzioni"][1]["importo"], "115.20"); // 12,00 m² × 9,60
+    assert_eq!(a["esito"]["totali"][0]["dopo"], "86.40");
     assert_eq!(r["consumi"]["token_ingresso"], 200);
     let msg = finto.ricevute("/messages");
     assert_eq!(msg.len(), 2);
@@ -630,9 +651,43 @@ fn proposta_provata_e_applicata() {
     );
     assert_ne!(prima, dopo);
     assert!(esito.to_string().contains("86.4"), "{esito:#}");
-    // La proposta è consumata; l'applicazione si annulla come ogni passo.
-    let e = rifiuta(&mut s, json!({"richiesta": "assistente_applica"}));
-    assert_eq!(e["motivo"], "nessuna_proposta");
+    assert_eq!(
+        esito["voci"],
+        json!([{"lavorazione": "L01", "codice": "T.01", "da_completare": false}])
+    );
+    // La proposta resta: si aggiunge anche lo smalto, con l'altezza corretta.
+    let scelte = json!([{"lavorazione": "L01", "codici": ["T.03"], "misure": [{"B": "2,5"}]}]);
+    let a = chiedi(
+        &mut s,
+        json!({"richiesta": "assistente_anteprima", "scelte": scelte}),
+    );
+    // 4 × 2,5 = 10,00 m²: 72,00 € l'idropittura, 96,00 € lo smalto.
+    assert_eq!(a["opzioni"][0]["importo"], "72.00");
+    assert_eq!(a["opzioni"][1]["importo"], "96.00");
+    assert_eq!(a["esito"]["totali"][0]["dopo"], "182.40");
+    chiedi(
+        &mut s,
+        json!({"richiesta": "assistente_applica", "scelte": scelte}),
+    );
+    assert_eq!(computi(&mut s)[0]["totale"], "182.40");
+    // Scelte non valide: rifiutate senza modificare.
+    let e = rifiuta(
+        &mut s,
+        json!({"richiesta": "assistente_applica", "scelte": [{"lavorazione": "L01", "codici": ["P.01"]}]}),
+    );
+    assert_eq!(e["motivo"], "scelta_non_valida");
+    let e = rifiuta(
+        &mut s,
+        json!({"richiesta": "assistente_anteprima", "scelte": [{"lavorazione": "L01", "codici": [], "misure": [{"L": "x"}]}]}),
+    );
+    assert_eq!(e["motivo"], "scelta_non_valida");
+    let e = rifiuta(
+        &mut s,
+        json!({"richiesta": "assistente_applica", "scelte": []}),
+    );
+    assert_eq!(e["motivo"], "nessuna_scelta");
+    // Ogni applicazione si annulla come ogni passo.
+    chiedi(&mut s, json!({"richiesta": "annulla"}));
     chiedi(&mut s, json!({"richiesta": "annulla"}));
     assert_eq!(computi(&mut s), prima);
 
@@ -663,7 +718,7 @@ fn proposta_con_ricerca_ibrida() {
     );
     assert_eq!(r["ricerca_ibrida"], true);
     assert!(r.get("avviso_ricerca").is_none());
-    assert_eq!(r["prova"]["ok"], true);
+    assert_eq!(r["anteprima"]["esito"]["totali"][0]["dopo"], "86.40");
     // Un lotto per l'indice e un testo per la domanda.
     assert_eq!(finto.ricevute("/embeddings").len(), 2);
 }
@@ -725,16 +780,16 @@ fn proposta_eseguita_fuori_dal_servizio_con_anteprima() {
         (Some(true), Some(7)),
         "{r:#}"
     );
-    let prova = &r["risultato"]["prova"];
-    assert_eq!(prova["ok"], true);
-    assert_eq!(prova["computo"], "Computo metrico estimativo");
-    let voci = prova["voci"].as_array().unwrap();
-    assert_eq!(voci.len(), 1);
+    let a = &r["risultato"]["anteprima"];
+    assert_eq!(a["computo"], "Computo metrico estimativo");
+    let voci = a["opzioni"].as_array().unwrap();
+    assert_eq!(voci.len(), 2);
     assert_eq!(voci[0]["lavorazione"], "L01");
     assert_eq!(voci[0]["codice"], "T.01");
     assert_eq!(voci[0]["quantita"], "12.00");
     assert_eq!(voci[0]["importo"], "86.40");
-    assert_eq!(prova["esito"]["totali"][0]["dopo"], "86.40");
+    assert_eq!(a["scelte"].as_array().unwrap().len(), 1);
+    assert_eq!(a["esito"]["totali"][0]["dopo"], "86.40");
     // L'anteprima non tocca il progetto; la proposta resta da applicare.
     assert_eq!(
         chiedi(&mut s, json!({"richiesta": "info"}))["computi"][0]["voci"],
@@ -818,7 +873,7 @@ fn stato_dell_indice_e_modelli() {
             i["completo"].as_bool(),
             i["ricerca"].as_str()
         ),
-        (Some(22), Some(0), Some(false), Some("testuale"))
+        (Some(26), Some(0), Some(false), Some("testuale"))
     );
     chiedi(
         &mut s,
@@ -834,7 +889,7 @@ fn stato_dell_indice_e_modelli() {
             i["completo"].as_bool(),
             i["ricerca"].as_str()
         ),
-        (Some(22), Some(true), Some("ibrida"))
+        (Some(26), Some(true), Some("ibrida"))
     );
     assert_eq!(i["spazio"]["dimensioni"], DIM);
     // Lo stato dell'indice non fa chiamate.

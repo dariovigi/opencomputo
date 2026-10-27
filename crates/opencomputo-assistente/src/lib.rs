@@ -31,6 +31,7 @@ pub mod proposta;
 pub mod provider;
 pub mod ricerca;
 pub mod risposta;
+pub mod scelta;
 pub mod schema;
 pub mod testo;
 pub mod unita;

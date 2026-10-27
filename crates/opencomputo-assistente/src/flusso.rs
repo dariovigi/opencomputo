@@ -1,11 +1,15 @@
 //! Workflow B completo: dalla richiesta alla proposta validata (ADR 0025).
 //!
 //! 1. analisi della richiesta (prima chiamata al modello, schema [`schema::schema_analisi`]);
-//!    se mancano dati bloccanti il flusso si ferma con le domande per l'utente;
+//!    il flusso si ferma con le domande per l'utente solo se non c'è nessuna lavorazione
+//!    riconoscibile; altrimenti le informazioni mancanti diventano opzioni da scegliere e
+//!    domande accanto alla proposta;
 //! 2. ricerca dei candidati per ogni lavorazione: testuale e, se c'è l'indice vettoriale
 //!    del prezzario, vettoriale (un solo lotto di embedding per tutte le domande);
-//! 3. scelta delle voci e righi (seconda chiamata, schema [`schema::schema_selezione`]);
-//! 4. validazione e traduzione in comandi ([`valida_selezione`]).
+//! 3. voci possibili in ordine di pertinenza e righi (seconda chiamata, schema
+//!    [`schema::schema_selezione`]);
+//! 4. validazione ([`valida_selezione`]); i comandi nascono dalle scelte dell'utente
+//!    ([`crate::scelta`]).
 //!
 //! I provider entrano come tratti: nei test sono sostituti deterministici.
 
@@ -105,7 +109,7 @@ pub struct Consumi {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "esito", rename_all = "snake_case")]
 pub enum EsitoFlusso {
-    /// Mancano dati bloccanti: rispondere alle domande e ripetere la richiesta.
+    /// Nessuna lavorazione riconoscibile: rispondere alle domande e ripetere la richiesta.
     DaChiarire {
         /// Analisi con le informazioni mancanti.
         analisi: RispostaAnalisi,
@@ -209,7 +213,7 @@ pub fn proponi(
         serde_json::from_value(analisi.json).map_err(|e| ErroreFlusso::Analisi {
             motivo: e.to_string(),
         })?;
-    if controlla_analisi(&analisi)? {
+    if controlla_analisi(&analisi)? && analisi.lavorazioni.is_empty() {
         return Ok(EsitoFlusso::DaChiarire { analisi, consumi });
     }
 
@@ -262,7 +266,7 @@ pub fn proponi(
             schema: schema::schema_selezione(),
             nome: STRUMENTO_SELEZIONE.into(),
             descrizione:
-                "Registra le voci scelte, i righi di misura, le ipotesi e le informazioni mancanti."
+                "Registra le voci possibili, i righi di misura, le ipotesi e le informazioni mancanti."
                     .into(),
             max_tokens: parametri.max_token_selezione,
         },
@@ -297,7 +301,7 @@ pub fn proponi(
     if !proposta.informazioni_mancanti.is_empty()
         && proposta.esito == crate::proposta::EsitoProposta::Completo
     {
-        proposta.esito = crate::proposta::EsitoProposta::Provvisorio;
+        proposta.esito = crate::proposta::EsitoProposta::DaRivedere;
     }
     Ok(EsitoFlusso::Proposta {
         analisi,

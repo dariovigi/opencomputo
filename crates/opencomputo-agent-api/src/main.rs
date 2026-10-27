@@ -268,8 +268,9 @@ enum AzioneAssistente {
         #[arg(long)]
         unita: Option<String>,
     },
-    /// Propone voci di computo dalla richiesta e le prova sul progetto; con
-    /// `--applica` le esegue e salva il file se la prova è riuscita.
+    /// Propone voci di computo dalla richiesta, con le opzioni per ogni lavorazione, e
+    /// prova quelle preselezionate; con `--applica` le aggiunge e salva il file se la
+    /// prova è riuscita.
     Proponi {
         /// File di progetto.
         file: PathBuf,
@@ -754,17 +755,17 @@ fn assistente(azione: AzioneAssistente) -> Result<(Value, u8), ErroreApplicazion
                 testo: testo.join(" "),
                 computo,
             })?;
+            // Applicabile: le scelte iniziali passano la prova.
             let provata = proposta
-                .pointer("/prova/ok")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
+                .pointer("/anteprima/esito")
+                .is_some_and(|e| !e.is_null());
             if !applica {
                 return ok(proposta);
             }
             if !provata {
                 return Ok((proposta, uscita::RIFIUTATA));
             }
-            let esito = s.gestisci(Richiesta::AssistenteApplica {})?;
+            let esito = s.gestisci(Richiesta::AssistenteApplica { scelte: None })?;
             let salvato = s.gestisci(Richiesta::Salva {
                 percorso: None,
                 gzip: None,

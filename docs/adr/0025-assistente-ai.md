@@ -34,8 +34,8 @@ Il titolare ha chiesto inoltre di poter importare prezzari in DCF.
    stesse validazioni della GUI, della CLI e degli agenti (ADR 0008) e ogni proposta si
    può annullare.
 3. **Il modello non sceglie prezzi né codici.** Riceve solo i candidati trovati dalla
-   ricerca, con handle brevi (`c01`, `c02`…) validi per una sola richiesta, e sceglie un
-   handle o `NESSUNO`. Il prezzo arriva sempre dal prezzario attraverso
+   ricerca, con handle brevi (`c01`, `c02`…) validi per una sola richiesta, e propone
+   handle (decisione 29). Il prezzo arriva sempre dal prezzario attraverso
    `copia_da_prezzario` e viene fotografato nella voce (ADR 0003).
 4. **Catalogo chiuso di forme di rigo.** Il modello non scrive espressioni: indica una
    forma (`conteggio`, `lunghezza`, `superficie`, `rettangolo`, `triangolo`, `trapezio`,
@@ -172,6 +172,40 @@ Il titolare ha chiesto inoltre di poter importare prezzari in DCF.
     `banco-di-prova` e con `OPENCOMPUTO_PROVIDER_DI_PROVA=http://127.0.0.1:…`; in quel
     caso le chiavi restano in memoria. La feature non entra nei pacchetti; il banco
     rifiuta di partire se il motore non la ha, per non toccare il portachiavi vero.
+
+### Voci alternative scelte dall'utente (2026-10-27)
+
+Dopo la prova sul Mac il titolare ha chiesto meno esclusioni e avvisi, e più scelta: per
+ogni lavorazione le voci possibili in ordine di probabilità, da spuntare, aggiungere al
+computo e ripetere. Scelte del titolare: misure modificabili, fino a 5 opzioni con
+pertinenza, preselezionata la più pertinente delle lavorazioni chiare.
+
+29. **Opzioni invece di una voce.** La seconda chiamata restituisce per ogni lavorazione
+    i righi di misura e fino a 5 opzioni (handle, pertinenza alta/media/bassa,
+    motivazione), più `chiarezza`: `chiara` o `da_precisare` con che cosa manca. Non ci
+    sono più ruoli (principale, complementare, alternativa) né `NESSUNO`: le alternative
+    sono le opzioni, una lavorazione senza opzioni è «senza voce». Rust ordina per
+    pertinenza (a parità l'ordine del modello) e preseleziona la prima solo se la
+    lavorazione è chiara.
+30. **Validazione che scarta il meno possibile.** Un valore non valido diventa «da
+    completare», un parametro estraneo è ignorato, un rigo di grandezza diversa dagli
+    altri è tolto, un'opzione incoerente (handle non inviato, unità di un'altra grandezza)
+    è tolta: dettagli di gravità «informazione», mostrati chiusi. Solo un valore
+    dichiarato «dell'utente» ma assente dalla richiesta resta un avviso (diventa
+    ipotesi). L'analisi ferma il flusso solo se non riconosce nessuna lavorazione; le
+    altre informazioni mancanti diventano domande accanto alla proposta.
+31. **I comandi nascono dalle scelte** (`scelta`): per lavorazione i codici spuntati e le
+    misure eventualmente corrette dall'utente; un `aggiungi_voce_computo` per opzione
+    spuntata, nell'ordine della proposta. Un rigo con valori mancanti entra **vuoto**,
+    con i valori noti nella descrizione: mai una quantità parziale. Le voci con unità
+    senza forme (h, m²/mese) entrano allo stesso modo.
+32. **Anteprima di tutte le opzioni.** `assistente_anteprima` esegue su una copia del
+    progetto tutte le opzioni di tutte le lavorazioni con le misure correnti, e prova
+    quelle scelte con la politica della sessione: quantità, importi e totali vengono dal
+    core e l'interfaccia li aggiorna a ogni spunta o misura cambiata.
+33. **La proposta resta** dopo `assistente_applica`: si possono aggiungere altre opzioni
+    (ogni aggiunta è un passo annullabile). Si dimentica solo cambiando progetto o
+    chiedendo una nuova proposta.
 
 ## Conseguenze
 

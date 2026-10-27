@@ -697,26 +697,18 @@ impl Assistente {
         })
     }
 
-    /// Comandi dell'ultima proposta, da eseguire nella sessione; la proposta è consumata.
+    /// Ultima proposta (resta disponibile dopo l'applicazione, per aggiungere altre
+    /// opzioni).
     ///
     /// # Errors
-    /// Nessuna proposta da applicare.
-    pub fn da_applicare(
-        &mut self,
-    ) -> Result<Vec<opencomputo_application::Comando>, ErroreApplicazione> {
-        let p = self.ultima.take().ok_or_else(|| {
+    /// Nessuna proposta.
+    pub fn proposta(&self) -> Result<&Proposta, ErroreApplicazione> {
+        self.ultima.as_ref().ok_or_else(|| {
             errore(
                 "nessuna_proposta",
-                "nessuna proposta da applicare: usare `assistente_proponi`",
+                "nessuna proposta: usare `assistente_proponi`",
             )
-        })?;
-        if p.comandi.is_empty() {
-            return Err(errore(
-                "nessuna_proposta",
-                "la proposta non contiene voci da aggiungere",
-            ));
-        }
-        Ok(p.comandi)
+        })
     }
 }
 

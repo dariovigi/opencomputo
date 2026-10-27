@@ -107,11 +107,11 @@ impl Embedding for EmbeddingFinto {
     }
 }
 
-/// Modello finto: analisi preparata; nella selezione sceglie il candidato la cui
-/// descrizione contiene la parola indicata.
+/// Modello finto: analisi preparata; nella selezione propone come opzioni i candidati
+/// la cui descrizione contiene la parola indicata (il primo con pertinenza alta).
 struct ModelloFinto {
     analisi: Value,
-    /// (parola nella descrizione del candidato, lavorazione JSON senza il candidato)
+    /// (parola nella descrizione dei candidati, lavorazione JSON senza le opzioni)
     scelte: Vec<(&'static str, Value)>,
     ipotesi: Vec<Value>,
     chiamate: Mutex<Vec<Chiamata>>,
@@ -137,22 +137,31 @@ impl Generazione for ModelloFinto {
                 .scelte
                 .iter()
                 .map(|(parola, l)| {
-                    let handle = candidati
+                    let opzioni: Vec<Value> = candidati
                         .iter()
-                        .find(|x| {
-                            x["descrizione"]
-                                .as_str()
-                                .unwrap()
-                                .to_lowercase()
-                                .contains(parola)
+                        .filter(|x| {
+                            let d = x["descrizione"].as_str().unwrap().to_lowercase();
+                            // «^parola»: solo all'inizio della descrizione.
+                            match parola.strip_prefix('^') {
+                                Some(p) => d.starts_with(p),
+                                None => d.contains(parola),
+                            }
                         })
-                        .map_or("NESSUNO", |x| x["handle"].as_str().unwrap());
+                        .enumerate()
+                        .map(|(i, x)| {
+                            json!({
+                                "candidato": x["handle"],
+                                "pertinenza": if i == 0 { "alta" } else { "media" },
+                                "motivazione": "contiene la parola cercata"
+                            })
+                        })
+                        .collect();
                     let mut l = l.clone();
-                    l["candidato"] = json!(handle);
+                    l["opzioni"] = json!(opzioni);
                     l
                 })
                 .collect();
-            json!({"esito": "completo", "lavorazioni": lavorazioni, "ipotesi": self.ipotesi, "informazioni_mancanti": []})
+            json!({"lavorazioni": lavorazioni, "ipotesi": self.ipotesi, "informazioni_mancanti": []})
         };
         Ok(RispostaModello {
             json,
@@ -173,8 +182,8 @@ fn analisi_parete() -> Value {
 
 fn lavorazione_parete() -> Value {
     json!({
-        "id": "L01", "descrizione": "Tinteggiatura della parete", "candidato": "", "ruolo": "principale",
-        "gruppo_alternativa": "", "complementare_di": "", "motivazione": "idropittura su pareti",
+        "id": "L01", "descrizione": "Tinteggiatura della parete", "chiarezza": "chiara",
+        "da_precisare": "", "opzioni": [],
         "righe": [{"descrizione": "parete", "forma": "rettangolo", "segno": "positivo", "parametri": [
             {"nome": "N", "valore": "1", "unita": "n", "provenienza": "utente", "rif_ipotesi": ""},
             {"nome": "L", "valore": "4", "unita": "m", "provenienza": "utente", "rif_ipotesi": ""},
@@ -194,7 +203,7 @@ fn indice_vettoriale(p: &Prezzario, e: &EmbeddingFinto) -> IndiceVettoriale {
 fn indicizzazione_incrementale_e_ripresa() {
     let mut p = prezzario();
     let da = da_indicizzare(&p, 8_000);
-    assert_eq!(da.len(), 22);
+    assert_eq!(da.len(), 26);
 
     // Interruzione al terzo lotto: i due lotti completati restano nell'indice salvato.
     let guasto = EmbeddingFinto {
@@ -209,18 +218,18 @@ fn indicizzazione_incrementale_e_ripresa() {
         avanzamenti.push((a.lotto, a.lotti, a.calcolate, a.da_calcolare));
     });
     assert_eq!(e.map_err(|e| e.codice()), Err("rete"));
-    assert_eq!(avanzamenti, [(1, 5, 5, 22), (2, 5, 10, 22)]);
+    assert_eq!(avanzamenti, [(1, 6, 5, 26), (2, 6, 10, 26)]);
 
-    // Ripresa dal file salvato: si calcolano solo le 12 voci mancanti.
+    // Ripresa dal file salvato: si calcolano solo le 16 voci mancanti.
     let ok = EmbeddingFinto::new();
     let mut iv = IndiceVettoriale::decodifica(&salvato.unwrap(), &ok.spazio()).unwrap();
     let r = indicizza(&ok, &mut iv, &da, &Annullamento::new(), |_, _| {}).unwrap();
-    assert_eq!((r.voci, r.riusate, r.calcolate, r.lotti), (22, 10, 12, 3));
+    assert_eq!((r.voci, r.riusate, r.calcolate, r.lotti), (26, 10, 16, 4));
     assert!(iv.completo(&da));
 
     // Di nuovo: niente da calcolare.
     let r = indicizza(&ok, &mut iv, &da, &Annullamento::new(), |_, _| {}).unwrap();
-    assert_eq!((r.riusate, r.calcolate, r.lotti), (22, 0, 0));
+    assert_eq!((r.riusate, r.calcolate, r.lotti), (26, 0, 0));
 
     // Cambia una descrizione e sparisce una voce: una sola voce ricalcolata, una rimossa.
     p.voci[0]
@@ -229,7 +238,7 @@ fn indicizzazione_incrementale_e_ripresa() {
     p.voci.pop();
     let da = da_indicizzare(&p, 8_000);
     let r = indicizza(&ok, &mut iv, &da, &Annullamento::new(), |_, _| {}).unwrap();
-    assert_eq!((r.voci, r.riusate, r.calcolate, r.rimosse), (21, 20, 1, 1));
+    assert_eq!((r.voci, r.riusate, r.calcolate, r.rimosse), (25, 24, 1, 1));
 
     // Spazio diverso: rifiutato prima di qualsiasi chiamata.
     let altro = EmbeddingFinto {
@@ -317,7 +326,7 @@ fn flusso_ibrido_dalla_richiesta_alla_prova() {
         "{:?}",
         proposta.avvisi
     );
-    let prova = verifica::prova(&s, &proposta).unwrap();
+    let prova = verifica::prova(&s, &proposta, &proposta.scelte_predefinite()).unwrap();
     assert_eq!(
         prova.totali.first().and_then(|t| t.dopo),
         Some(Importo::new(dec!(86.40)))
@@ -393,39 +402,40 @@ fn senza_indice_vettoriale_la_ricerca_e_testuale() {
 }
 
 #[test]
-fn dati_bloccanti_mancanti_fermano_il_flusso() {
+fn senza_lavorazioni_il_flusso_chiede_altrimenti_propone_opzioni() {
     let p = prezzario();
     let it = IndiceTestuale::new(&p);
-    let modello = ModelloFinto {
-        analisi: json!({
-            "esito": "Chiedi",
-            "lavorazioni": [{"id": "L01", "descrizione": "Pavimento", "query_ricerca": "pavimento", "dimensione_attesa": "superficie"}],
-            "informazioni_mancanti": [{"domanda": "Quanto misura la stanza?", "bloccante": true, "lavorazioni": ["L01"]}]
-        }),
+    let s = Sessione::nuovo("Prova");
+    let esegui = |m: &ModelloFinto| {
+        proponi(
+            &Strumenti {
+                generazione: m,
+                embedding: None,
+                indice_testo: &it,
+                indice_vettori: None,
+            },
+            &Richiesta {
+                testo: "rifare il pavimento della stanza",
+                nome_prezzario: "prova",
+                prezzario: &p,
+                progetto: s.progetto(),
+                computo: None,
+            },
+            &Parametri::default(),
+            &Annullamento::new(),
+        )
+        .unwrap()
+    };
+    let domanda =
+        json!({"domanda": "Quanto misura la stanza?", "bloccante": true, "lavorazioni": ["L01"]});
+    // Nessuna lavorazione riconoscibile: domande, nessuna seconda chiamata.
+    let m = ModelloFinto {
+        analisi: json!({"esito": "Chiedi", "lavorazioni": [], "informazioni_mancanti": [domanda]}),
         scelte: vec![],
         ipotesi: vec![],
         chiamate: Mutex::default(),
     };
-    let s = Sessione::nuovo("Prova");
-    let esito = proponi(
-        &Strumenti {
-            generazione: &modello,
-            embedding: None,
-            indice_testo: &it,
-            indice_vettori: None,
-        },
-        &Richiesta {
-            testo: "rifare il pavimento",
-            nome_prezzario: "prova",
-            prezzario: &p,
-            progetto: s.progetto(),
-            computo: None,
-        },
-        &Parametri::default(),
-        &Annullamento::new(),
-    )
-    .unwrap();
-    let EsitoFlusso::DaChiarire { analisi, .. } = esito else {
+    let EsitoFlusso::DaChiarire { analisi, .. } = esegui(&m) else {
         panic!("attese domande")
     };
     assert_eq!(
@@ -433,9 +443,46 @@ fn dati_bloccanti_mancanti_fermano_il_flusso() {
         "Quanto misura la stanza?"
     );
     assert_eq!(
-        modello.chiamate.lock().unwrap().len(),
+        m.chiamate.lock().unwrap().len(),
         1,
         "nessuna seconda chiamata"
+    );
+
+    // La lavorazione si riconosce ma manca il materiale e la misura: opzioni da scegliere,
+    // misure da completare, la domanda resta accanto alla proposta.
+    let m = ModelloFinto {
+        analisi: json!({
+            "esito": "chiedi",
+            "lavorazioni": [{"id": "L01", "descrizione": "Pavimento", "query_ricerca": "pavimento", "dimensione_attesa": "superficie"}],
+            "informazioni_mancanti": [domanda]
+        }),
+        scelte: vec![(
+            "^pavimento",
+            json!({
+                "id": "L01", "descrizione": "Pavimento", "chiarezza": "da_precisare",
+                "da_precisare": "materiale non indicato", "opzioni": [],
+                "righe": [{"descrizione": "stanza", "forma": "superficie", "segno": "positivo", "parametri": [
+                    {"nome": "N", "valore": "1", "unita": "n", "provenienza": "utente", "rif_ipotesi": ""},
+                    {"nome": "A", "valore": "", "unita": "m2", "provenienza": "mancante", "rif_ipotesi": ""}
+                ]}]
+            }),
+        )],
+        ipotesi: vec![],
+        chiamate: Mutex::default(),
+    };
+    let EsitoFlusso::Proposta { proposta, .. } = esegui(&m) else {
+        panic!("attesa una proposta")
+    };
+    assert_eq!(m.chiamate.lock().unwrap().len(), 2);
+    let l = &proposta.lavorazioni[0];
+    assert!(!l.chiara && l.da_completare());
+    let mut codici: Vec<&str> = l.opzioni.iter().map(|o| o.codice.as_str()).collect();
+    codici.sort_unstable();
+    assert_eq!(codici, ["P.01", "P.04", "P.05"]);
+    assert!(proposta.scelte_predefinite().is_empty());
+    assert_eq!(
+        proposta.informazioni_mancanti[0].domanda,
+        "Quanto misura la stanza?"
     );
 }
 

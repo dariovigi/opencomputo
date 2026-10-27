@@ -105,31 +105,43 @@ test('chiavi nel portachiavi, mai mostrate né salvate nei file', async () => {
   await schermata('ai-02-chiavi');
 });
 
-test('proposta con anteprima calcolata dal motore, applicazione e annullamento', async () => {
+/** Celle di un'opzione: [spunta, pertinenza, voce, quantità, U.M., prezzo, importo]. */
+const opzione = (l, codice) => p().locator(`tr.ai-opzione[data-lavorazione="${l}"][data-codice="${codice}"]`);
+const celle = async (l, codice) => (await opzione(l, codice).locator('td').allInnerTexts()).map((t) => t.trim());
+/** Attende che l'anteprima mostri l'importo atteso per l'opzione. */
+async function importo(l, codice, atteso) {
+  await p().waitForFunction(([l, c, a]) => document.querySelector(`tr.ai-opzione[data-lavorazione="${l}"][data-codice="${c}"] .ai-importo`)?.textContent === a, [l, codice, atteso]);
+}
+const barra = () => p().locator('.ai-barra-scelte');
+
+test('alternative proposte in ordine di pertinenza, spunta, aggiunta e annullamento', async () => {
   await scheda('proposta');
   // Il selettore dei file ora accetta anche i listini CSV.
   await b.dialogo(CSV);
   await p().click('button[name="carica-prezzario-ai"]');
   await attendi();
-  assert.match(await ultimaNotifica('ok'), /22 voci/);
-  assert.match(await p().locator('select[name="prezzario-ai"]').innerText(), /prezzario_prova \(22 voci\)/);
+  assert.match(await ultimaNotifica('ok'), /26 voci/);
+  assert.match(await p().locator('select[name="prezzario-ai"]').innerText(), /prezzario_prova \(26 voci\)/);
   assert.match(await p().locator('.ai-scelte').innerText(), /Ricerca per parole/);
 
   await proponi('Tinteggiatura di una parete di 4 x 3 m');
   const r = p().locator('.ai-risultato');
   await r.waitFor();
   assert.match(await r.locator('h2').innerText(), /Completa/);
-  const voce = r.locator('tr.ai-voce[data-lavorazione="L01"]');
-  const celle = await voce.locator('td').allInnerTexts();
-  assert.match(celle[1], /T\.01/);
-  assert.match(celle[1], /idropittura/i);
-  assert.equal(celle[2], '12,00');
-  assert.equal(celle[4], '7,20');
-  assert.equal(celle[5], '86,40');
-  assert.match(await r.locator('.ai-totali').innerText(), /0,00 € → 86,40 €/);
-  // Provenienza dei parametri: dalla richiesta.
-  assert.match(await r.locator('.ai-righe').innerText(), /N = 1 *L = 4 m *B = 3 m/);
-  assert.match(await r.locator('.ai-parametro').nth(1).getAttribute('title'), /Dalla richiesta/);
+  const l = r.locator('.ai-lavorazione[data-lavorazione="L01"]');
+  assert.match(await l.locator('caption').innerText(), /Alternative proposte/i);
+  // Tre voci, dalla più pertinente; la prima spuntata; valori di tutte calcolati dal motore.
+  const ordine = await l.locator('tr.ai-opzione').evaluateAll((tr) => tr.map((t) => t.dataset.codice));
+  assert.deepEqual(ordine, ['T.01', 'T.03', 'T.02']);
+  await importo('L01', 'T.03', '115,20');
+  assert.deepEqual(await celle('L01', 'T.01'), ['', 'alta', 'T.01 Tinteggiatura con idropittura lavabile, due mani\nidropittura su pareti interne', '12,00', 'm²', '7,20', '86,40']);
+  assert.equal((await celle('L01', 'T.02'))[6], '136,80');
+  assert.ok(await p().isChecked('input[name="opzione-L01-T.01"]'));
+  assert.ok(!(await p().isChecked('input[name="opzione-L01-T.03"]')));
+  // Misure modificabili, dalla richiesta.
+  assert.equal(await p().inputValue('input[name="misura-L01-0-L"]'), '4');
+  assert.match(await p().getAttribute('input[name="misura-L01-0-L"]', 'title'), /Dalla richiesta/);
+  assert.match(await barra().innerText(), /1 voce spuntata[\s\S]*0,00 € → 86,40 €/);
   await schermata('ai-03-proposta');
 
   // Due chiamate ad Anthropic con la chiave salvata; nessun prezzo nei messaggi.
@@ -139,18 +151,47 @@ test('proposta con anteprima calcolata dal motore, applicazione e annullamento',
   assert.ok(m.every((x) => x.corpo.output_config?.format?.type === 'json_schema'));
   assert.ok(!JSON.stringify(m[1].corpo).includes('7,20') && !JSON.stringify(m[1].corpo).includes('T.01'));
 
-  // Il progetto non cambia finché non si applica.
+  // Si spunta anche lo smalto e si corregge l'altezza: i valori si aggiornano.
+  await p().check('input[name="opzione-L01-T.03"]');
+  await p().fill('input[name="misura-L01-0-B"]', '2,5');
+  await p().press('input[name="misura-L01-0-B"]', 'Tab');
+  await importo('L01', 'T.03', '96,00');
+  await importo('L01', 'T.01', '72,00');
+  assert.match(await barra().innerText(), /2 voci spuntate[\s\S]*0,00 € → 168,00 €/);
+  assert.equal(await p().locator('button[name="aggiungi-scelte"]').innerText(), 'Aggiungi al computo (2)');
+  // Un valore non valido blocca l'aggiunta.
+  await p().fill('input[name="misura-L01-0-L"]', 'quattro');
+  await p().press('input[name="misura-L01-0-L"]', 'Tab');
+  await p().waitForFunction(() => document.querySelector('.ai-totali-scelte .errore'));
+  assert.match(await barra().innerText(), /non è un numero/);
+  assert.ok(await p().locator('button[name="aggiungi-scelte"]').isDisabled());
+  await p().fill('input[name="misura-L01-0-L"]', '4');
+  await p().press('input[name="misura-L01-0-L"]', 'Tab');
+  await p().waitForFunction(() => !document.querySelector('.ai-totali-scelte .errore'));
+
+  // Il progetto non cambia finché non si aggiunge.
   let c = (await b.motore({ richiesta: 'computo' })).risultato;
   assert.equal(c.voci.length, 0);
-  await p().click('button[name="applica-proposta"]');
+  await p().click('button[name="aggiungi-scelte"]');
   await attendi();
-  assert.match(await ultimaNotifica('ok'), /Una voce aggiunta/);
+  assert.match(await ultimaNotifica('ok'), /2 voci aggiunte/);
   c = (await b.motore({ richiesta: 'computo' })).risultato;
-  assert.equal(c.voci.length, 1);
-  assert.equal(c.totale, '86.40');
+  assert.deepEqual(c.voci.map((v) => v.codice), ['T.01', 'T.03']);
+  assert.equal(c.totale, '168.00');
   assert.match(c.voci[0].note, /Assistente AI, L01/);
-  assert.equal(await p().locator('.ai-risultato').count(), 0);
-  // Un passo come gli altri: si annulla dalla barra.
+  // La proposta resta: le voci aggiunte sono segnate e non più spuntate, si può continuare.
+  assert.match(await opzione('L01', 'T.01').innerText(), /aggiunta/);
+  assert.ok(!(await p().isChecked('input[name="opzione-L01-T.01"]')));
+  assert.match(await barra().innerText(), /Nessuna voce spuntata/);
+  await p().check('input[name="opzione-L01-T.02"]');
+  await p().waitForFunction(() => /168,00 € → 282,00 €/.test(document.querySelector('.ai-totali-scelte')?.textContent ?? ''));
+  await p().click('button[name="aggiungi-scelte"]');
+  await attendi();
+  c = (await b.motore({ richiesta: 'computo' })).risultato;
+  assert.equal(c.voci.length, 3);
+  // Ogni aggiunta è un passo: si annulla dalla barra.
+  await p().click('button[aria-label="Annulla"]');
+  await attendi();
   await p().click('button[aria-label="Annulla"]');
   await attendi();
   c = (await b.motore({ richiesta: 'computo' })).risultato;
@@ -158,39 +199,90 @@ test('proposta con anteprima calcolata dal motore, applicazione e annullamento',
   await chiudiNotifiche();
 });
 
-test('ipotesi dichiarate: parametro evidenziato, proposta da rivedere', async () => {
+test('ipotesi evidenziate e modificabili', async () => {
   await proponi('Tinteggiatura delle pareti di una stanza con perimetro di 16 m');
   const r = p().locator('.ai-risultato');
   await r.waitFor();
   assert.match(await r.locator('h2').innerText(), /Da rivedere/);
-  const ipotesi = r.locator('.ai-parametro.ipotesi');
-  assert.equal(await ipotesi.innerText(), 'B = 2,70 m (I01)');
-  assert.match(await ipotesi.getAttribute('title'), /Ipotesi I01: altezza dei locali 2,70 m/);
+  const b2 = p().locator('input[name="misura-L01-0-B"]');
+  assert.equal(await b2.inputValue(), '2,70');
+  assert.match(await b2.getAttribute('class'), /ipotesi/);
+  assert.match(await b2.getAttribute('title'), /Ipotesi I01: altezza dei locali 2,70 m/);
   const elenchi = await r.locator('.ai-elenco').allInnerTexts();
   assert.ok(elenchi.some((t) => /Ipotesi[\s\S]*I01: altezza dei locali 2,70 m[\s\S]*impatto medio/.test(t)), elenchi.join('|'));
-  assert.ok(elenchi.some((t) => /Informazioni mancanti[\s\S]*altezza dei locali\?/.test(t)));
+  assert.ok(elenchi.some((t) => /Domande per precisare[\s\S]*altezza dei locali\?/.test(t)));
   // 16 × 2,70 = 43,20 m² a 7,20 €: calcolati dal motore.
-  const celle = await r.locator('tr.ai-voce td').allInnerTexts();
-  assert.equal(celle[2], '43,20');
-  assert.equal(celle[5], '311,04');
-  assert.ok(!(await p().locator('button[name="applica-proposta"]').isDisabled()));
+  await importo('L01', 'T.01', '311,04');
+  assert.equal((await celle('L01', 'T.01'))[3], '43,20');
   await schermata('ai-03b-ipotesi');
+  // L'altezza vera è 3 m: il valore non è più un'ipotesi.
+  await b2.fill('3');
+  await b2.press('Tab');
+  await importo('L01', 'T.01', '345,60');
+  assert.match(await b2.getAttribute('class'), /modificato/);
   await p().click('button[name="scarta-proposta"]');
   await attendi();
   assert.equal(await p().locator('.ai-risultato').count(), 0);
 });
 
-test('dati mancanti: domande da aggiungere alla richiesta', async () => {
-  await proponi('rifare il pavimento');
+test('materiale non indicato: opzioni possibili, nessuna preselezionata, misura da completare', async () => {
+  await proponi('rifare il pavimento della camera');
+  const l = p().locator('.ai-lavorazione[data-lavorazione="L01"]');
+  await l.waitFor();
+  assert.match(await l.locator('h3').innerText(), /Pavimento[\s\S]*Da precisare/);
+  assert.match(await l.locator('.ai-precisare').innerText(), /Materiale del pavimento non indicato/);
+  assert.match(await l.locator('caption').innerText(), /Opzioni possibili/i);
+  const ordine = await l.locator('tr.ai-opzione').evaluateAll((tr) => tr.map((t) => t.dataset.codice));
+  assert.deepEqual(ordine, ['P.01', 'P.04', 'P.05']);
+  assert.equal(await l.locator('input[type=checkbox]:checked').count(), 0);
+  assert.match(await barra().innerText(), /Nessuna voce spuntata/);
+  assert.ok(await p().locator('button[name="aggiungi-scelte"]').isDisabled());
+  // Superficie non indicata: campo da completare, quantità zero finché manca.
+  const area = p().locator('input[name="misura-L01-0-A"]');
+  assert.equal(await area.inputValue(), '');
+  assert.match(await area.getAttribute('class'), /mancante/);
+  await importo('L01', 'P.04', '0,00');
+  await schermata('ai-03c-opzioni');
+  // Si sceglie il parquet e si indica la superficie: 20 m² × 78,00 = 1.560,00 €.
+  await p().check('input[name="opzione-L01-P.04"]');
+  await area.fill('20');
+  await area.press('Tab');
+  await importo('L01', 'P.04', '1.560,00');
+  await p().waitForFunction(() => /1\.560,00 €/.test(document.querySelector('.ai-totali-scelte')?.textContent ?? ''));
+  await p().click('button[name="aggiungi-scelte"]');
+  await attendi();
+  const c = (await b.motore({ richiesta: 'computo' })).risultato;
+  assert.deepEqual(c.voci.map((v) => [v.codice, v.importo]), [['P.04', '1560.00']]);
+  await p().click('button[aria-label="Annulla"]');
+  await attendi();
+  // Senza la superficie la voce entrerebbe con il rigo da completare.
+  await p().check('input[name="opzione-L01-P.05"]');
+  await p().uncheck('input[name="opzione-L01-P.04"]');
+  await area.fill('');
+  await area.press('Tab');
+  await importo('L01', 'P.05', '0,00');
+  await p().click('button[name="aggiungi-scelte"]');
+  await attendi();
+  assert.match(await ultimaNotifica('ok'), /1 con misure da completare/);
+  const v = (await b.motore({ richiesta: 'computo' })).risultato.voci[0];
+  assert.equal(v.codice, 'P.05');
+  assert.match(v.righi[0].descrizione, /da completare: N = 1, A = \?/);
+  await p().click('button[aria-label="Annulla"]');
+  await attendi();
+  await chiudiNotifiche();
+});
+
+test('nessuna lavorazione riconoscibile: domande da aggiungere alla richiesta', async () => {
+  await proponi('ciao');
   const r = p().locator('.ai-risultato');
   await r.waitFor();
   assert.match(await r.innerText(), /Servono altre informazioni/);
-  assert.match(await r.innerText(), /Quanto misura la superficie del pavimento\?/);
-  assert.equal(await p().locator('button[name="applica-proposta"]').count(), 0);
+  assert.match(await r.innerText(), /Quali lavori servono\?/);
+  assert.equal(await p().locator('button[name="aggiungi-scelte"]').count(), 0);
   await p().click('button[name="aggiungi-risposte"]');
   await attendi();
   const testo = await p().inputValue('textarea[name="richiesta-ai"]');
-  assert.match(testo, /^rifare il pavimento\n\nRisposte:\n- Quanto misura la superficie del pavimento\? $/);
+  assert.match(testo, /^ciao\n\nRisposte:\n- Quali lavori servono\? $/);
 });
 
 test('errore del provider: messaggio chiaro e collegamento alle impostazioni', async () => {
@@ -221,25 +313,25 @@ test('indice: conferma dell\'invio, avanzamento, ricerca ibrida', async () => {
   await riga.locator('button[name="indicizza-prezzario_prova"]').click();
   // Conferma esplicita prima di inviare le voci.
   const modale = p().locator('.modale');
-  assert.match(await modale.innerText(), /22 voci di «prezzario_prova».*OpenAI/s);
+  assert.match(await modale.innerText(), /26 voci di «prezzario_prova».*OpenAI/s);
   await modale.locator('button', { hasText: 'Annulla' }).click();
   assert.equal(embedding().length, 0);
   await riga.locator('button[name="indicizza-prezzario_prova"]').click();
   await p().locator('.modale button', { hasText: 'Invia e indicizza' }).click();
   await p().waitForFunction(() => !document.querySelector('.ai-progresso'));
   await attendi();
-  assert.match(await ultimaNotifica('ok'), /22 voci calcolate/);
+  assert.match(await ultimaNotifica('ok'), /26 voci calcolate/);
   const celle = await riga.locator('td').allInnerTexts();
-  assert.equal(celle[2], '22');
+  assert.equal(celle[2], '26');
   assert.match(celle[3], /Ibrida/);
   assert.equal(await riga.locator('button').innerText(), 'Aggiorna');
   const avanzamenti = await p().evaluate(() => window.__avanzamenti);
   assert.ok(avanzamenti.length >= 1);
-  assert.equal(avanzamenti.at(-1).stato.calcolate, 22);
+  assert.equal(avanzamenti.at(-1).stato.calcolate, 26);
   const e = embedding();
   assert.equal(e.length, 1);
   assert.equal(e[0].chiave, 'sk-openai-prova');
-  assert.equal(e[0].corpo.input.length, 22);
+  assert.equal(e[0].corpo.input.length, 26);
   assert.ok(e[0].corpo.input.every((t) => !t.includes('€')));
   // La cache dei vettori è nella cartella di configurazione.
   assert.ok((await readdir(path.join(b.config, 'cache'))).some((f) => f.startsWith('vettori-')));
@@ -248,7 +340,7 @@ test('indice: conferma dell\'invio, avanzamento, ricerca ibrida', async () => {
   assert.match(await p().locator('.ai-scelte').innerText(), /Ricerca ibrida/);
   await proponi('Tinteggiatura di una parete di 5 x 3 m');
   assert.match(await p().locator('.ai-risultato h2').innerText(), /ricerca ibrida/);
-  assert.equal(await p().locator('tr.ai-voce td').nth(5).innerText(), '108,00');
+  await importo('L01', 'T.01', '108,00');
   await schermata('ai-04-ibrida');
   await chiudiNotifiche();
 });

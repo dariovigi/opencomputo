@@ -11,14 +11,17 @@
     clippy::indexing_slicing
 )]
 
+use std::collections::BTreeMap;
+
 use opencomputo_application::{Comando, Sessione};
 use opencomputo_assistente::candidati::Candidati;
 use opencomputo_assistente::proposta::{
-    Contesto, ErroreRisposta, EsitoProposta, Proposta, ProvenienzaValore, leggi_selezione,
-    valida_selezione,
+    Contesto, ErroreRisposta, EsitoProposta, Pertinenza, Proposta, ProvenienzaValore,
+    leggi_selezione, valida_selezione,
 };
 use opencomputo_assistente::ricerca::{FiltroVoci, IndiceTestuale};
 use opencomputo_assistente::risposta::{LavorazioneAnalisi, RispostaAnalisi, RispostaSelezione};
+use opencomputo_assistente::scelta::{ErroreScelta, Scelta, comandi};
 use opencomputo_assistente::unita::Dimensione;
 use opencomputo_assistente::verifica;
 use opencomputo_core::id::GeneratoreSequenziale;
@@ -76,17 +79,30 @@ fn riga(descrizione: &str, forma: &str, segno: &str, parametri: Vec<Value>) -> V
     json!({"descrizione": descrizione, "forma": forma, "segno": segno, "parametri": parametri})
 }
 
-fn lav(id: &str, candidato: &str, ruolo: &str, gruppo: &str, di: &str, righe: Vec<Value>) -> Value {
+/// Opzione: handle del codice, pertinenza.
+fn op(c: &Candidati, codice: &str, pertinenza: &str) -> Value {
+    json!({"candidato": h(c, codice), "pertinenza": pertinenza, "motivazione": format!("voce {codice}")})
+}
+
+/// Lavorazione chiara con le opzioni e i righi indicati.
+fn lav(id: &str, opzioni: Vec<Value>, righe: Vec<Value>) -> Value {
     json!({
-        "id": id, "descrizione": format!("lavorazione {id}"), "candidato": candidato,
-        "ruolo": ruolo, "gruppo_alternativa": gruppo, "complementare_di": di,
-        "righe": righe, "motivazione": "voce più pertinente"
+        "id": id, "descrizione": format!("lavorazione {id}"), "chiarezza": "chiara",
+        "da_precisare": "", "righe": righe, "opzioni": opzioni
     })
 }
 
-fn risposta(esito: &str, lavorazioni: Vec<Value>, ipotesi: Vec<Value>) -> RispostaSelezione {
+/// Lavorazione da precisare.
+fn da_precisare(id: &str, cosa: &str, opzioni: Vec<Value>, righe: Vec<Value>) -> Value {
+    let mut l = lav(id, opzioni, righe);
+    l["chiarezza"] = json!("da_precisare");
+    l["da_precisare"] = json!(cosa);
+    l
+}
+
+fn risposta(lavorazioni: Vec<Value>, ipotesi: Vec<Value>) -> RispostaSelezione {
     leggi_selezione(&json!({
-        "esito": esito, "lavorazioni": lavorazioni, "ipotesi": ipotesi, "informazioni_mancanti": []
+        "lavorazioni": lavorazioni, "ipotesi": ipotesi, "informazioni_mancanti": []
     }))
     .unwrap()
 }
@@ -116,6 +132,27 @@ fn totale(e: &opencomputo_application::Esito) -> Option<Importo> {
     e.totali.first().and_then(|t| t.dopo)
 }
 
+fn scelta(lavorazione: &str, codici: &[&str]) -> Scelta {
+    Scelta {
+        lavorazione: lavorazione.into(),
+        codici: codici.iter().map(|c| (*c).to_owned()).collect(),
+        misure: None,
+    }
+}
+
+fn prova(s: &Sessione, p: &Proposta, scelte: &[Scelta]) -> Option<Importo> {
+    totale(&verifica::prova(s, p, scelte).unwrap())
+}
+
+fn rettangolo(l: &str, b: &str) -> Value {
+    riga(
+        "parete",
+        "rettangolo",
+        "positivo",
+        vec![u("N", "1", "n"), u("L", l, "m"), u("B", b, "m")],
+    )
+}
+
 fn codici_avvisi(p: &Proposta) -> Vec<String> {
     p.avvisi.iter().map(|a| a.codice.clone()).collect()
 }
@@ -126,7 +163,7 @@ fn codici_avvisi(p: &Proposta) -> Vec<String> {
 fn ricerca_trova_le_voci_attese() {
     let p = prezzario();
     let indice = IndiceTestuale::new(&p);
-    assert_eq!(indice.len(), 22);
+    assert_eq!(indice.len(), 26);
     let casi = [
         ("massetto sabbia cemento", "M.01"),
         ("pavimento in gres", "P.01"),
@@ -237,20 +274,24 @@ fn candidati_dall_analisi() {
 // ---------------------------------------------------------------- proposta completa
 
 const BAGNO: &str = "Rifacimento di un bagno: demolizione del pavimento esistente di 6 mq, \
-    nuovo massetto e pavimento in gres su una superficie di 2,50 x 2,40 m, rivestimento \
+    nuovo massetto e pavimento su una superficie di 2,50 x 2,40 m, rivestimento \
     delle pareti alto 2,20 m su un perimetro di 9,80 m, sostituzione del vaso.";
 
 fn risposta_bagno(c: &Candidati) -> RispostaSelezione {
     let n1 = || u("N", "1", "n");
+    let bagno = || {
+        riga(
+            "bagno",
+            "rettangolo",
+            "positivo",
+            vec![n1(), u("L", "2.50", "m"), u("B", "2.40", "m")],
+        )
+    };
     risposta(
-        "provvisorio",
         vec![
             lav(
                 "L01",
-                &h(c, "D.01"),
-                "principale",
-                "",
-                "",
+                vec![op(c, "D.01", "alta")],
                 vec![riga(
                     "bagno",
                     "superficie",
@@ -258,38 +299,21 @@ fn risposta_bagno(c: &Candidati) -> RispostaSelezione {
                     vec![n1(), u("A", "6", "m2")],
                 )],
             ),
-            lav(
-                "L02",
-                &h(c, "M.01"),
-                "principale",
-                "",
-                "",
-                vec![riga(
-                    "bagno",
-                    "rettangolo",
-                    "positivo",
-                    vec![n1(), u("L", "2.50", "m"), u("B", "2.40", "m")],
-                )],
-            ),
-            lav(
+            lav("L02", vec![op(c, "M.01", "alta")], vec![bagno()]),
+            // Materiale non indicato: tre opzioni, nessuna preselezionata.
+            da_precisare(
                 "L03",
-                &h(c, "P.01"),
-                "principale",
-                "",
-                "",
-                vec![riga(
-                    "bagno",
-                    "rettangolo",
-                    "positivo",
-                    vec![n1(), u("L", "2.5", "m"), u("B", "2.4", "m")],
-                )],
+                "materiale del pavimento non indicato",
+                vec![
+                    op(c, "P.05", "bassa"),
+                    op(c, "P.01", "alta"),
+                    op(c, "P.04", "media"),
+                ],
+                vec![bagno()],
             ),
             lav(
                 "L04",
-                &h(c, "P.02"),
-                "principale",
-                "",
-                "",
+                vec![op(c, "P.02", "alta")],
                 vec![
                     riga(
                         "pareti",
@@ -311,18 +335,12 @@ fn risposta_bagno(c: &Candidati) -> RispostaSelezione {
             ),
             lav(
                 "L05",
-                &h(c, "I.01"),
-                "principale",
-                "",
-                "",
+                vec![op(c, "I.01", "alta")],
                 vec![riga("vaso", "conteggio", "positivo", vec![n1()])],
             ),
             lav(
                 "L06",
-                &h(c, "D.03"),
-                "complementare",
-                "",
-                "L05",
+                vec![op(c, "D.03", "alta")],
                 vec![riga("vaso esistente", "conteggio", "positivo", vec![n1()])],
             ),
         ],
@@ -331,62 +349,93 @@ fn risposta_bagno(c: &Candidati) -> RispostaSelezione {
 }
 
 #[test]
-fn bagno_dalla_risposta_al_computo() {
+fn bagno_con_opzioni_scelte_e_computo() {
     let p = prezzario();
-    let c = candidati(&p, &["D.01", "M.01", "P.01", "P.02", "I.01", "D.03"]);
+    let c = candidati(
+        &p,
+        &[
+            "D.01", "M.01", "P.01", "P.04", "P.05", "P.02", "I.01", "D.03",
+        ],
+    );
     let mut s = sessione(&p);
     let proposta = valida(&s, &p, &c, BAGNO, &risposta_bagno(&c));
 
-    assert_eq!(proposta.esito, EsitoProposta::Provvisorio); // c'è un'ipotesi
-    assert!(proposta.escluse.is_empty(), "{:?}", proposta.escluse);
+    assert_eq!(proposta.esito, EsitoProposta::DaRivedere); // pavimento da precisare, ipotesi
+    assert!(proposta.senza_voce.is_empty());
     assert_eq!(codici_avvisi(&proposta), Vec::<String>::new());
     assert_eq!(proposta.lavorazioni.len(), 6);
-    assert_eq!(proposta.ipotesi.len(), 1);
+    // Opzioni in ordine di pertinenza; nessuna preselezionata dove manca il materiale.
+    let l03 = proposta.lavorazione("L03").unwrap();
+    assert!(!l03.chiara);
+    assert_eq!(l03.da_precisare, "materiale del pavimento non indicato");
+    let codici: Vec<&str> = l03.opzioni.iter().map(|o| o.codice.as_str()).collect();
+    assert_eq!(codici, ["P.01", "P.04", "P.05"]);
+    assert_eq!(
+        l03.opzioni.first().map(|o| o.pertinenza),
+        Some(Pertinenza::Alta)
+    );
+    assert!(l03.opzioni.iter().all(|o| !o.preselezionata));
+    assert!(proposta.lavorazione("L01").unwrap().opzioni[0].preselezionata);
     // Provenienze: L dalla richiesta, la porta da ipotesi.
-    let l04 = proposta.lavorazioni.iter().find(|l| l.id == "L04").unwrap();
+    let l04 = proposta.lavorazione("L04").unwrap();
     assert_eq!(l04.ipotesi, ["I01"]);
     assert_eq!(
-        l04.righe
-            .first()
-            .and_then(|r| r.parametri.get(1))
-            .map(|p| p.provenienza.clone()),
-        Some(ProvenienzaValore::Utente {
+        l04.righe[0].parametri[1].provenienza,
+        ProvenienzaValore::Utente {
             testo: "9,80 m".into()
-        })
+        }
     );
-    // Comandi: una copia dal prezzario, poi una voce per lavorazione.
-    assert_eq!(proposta.comandi.len(), 7);
+
+    // Scelte iniziali: cinque voci, il pavimento escluso.
+    // 84,00 + 110,40 + 924,42 + 280,00 + 35,00 = 1.433,82 € (rivestimento: 9,80 × 2,20 =
+    // 21,56 − 0,80 × 2,10 = 1,68 → 19,88 m² × 46,50).
+    let predefinite = proposta.scelte_predefinite();
+    assert_eq!(predefinite.len(), 5);
+    assert_eq!(
+        prova(&s, &proposta, &predefinite),
+        Some(Importo::new(dec!(1433.82)))
+    );
+    // L'utente sceglie il gres: + 6,00 m² × 52,00 = 312,00 → 1.745,82 €.
+    let mut scelte = predefinite.clone();
+    scelte.push(scelta("L03", &["P.01"]));
+    let (cmd, voci) = comandi(&proposta, &scelte, s.progetto()).unwrap();
+    assert_eq!(cmd.len(), 7);
     assert!(matches!(
-        proposta.comandi.first(),
+        cmd.first(),
         Some(Comando::CopiaDaPrezzario { prezzario, codici }) if prezzario == NOME && codici.len() == 6
     ));
-
-    // Prova: 84,00 + 110,40 + 312,00 + 924,42 + 280,00 + 35,00 = 1.745,82 €
-    // (rivestimento: 9,80 × 2,20 = 21,56 − 0,80 × 2,10 = 1,68 → 19,88 m² × 46,50).
-    let prova = verifica::prova(&s, &proposta).unwrap();
-    assert!(!prova.applicato);
-    assert_eq!(totale(&prova), Some(Importo::new(dec!(1745.82))));
+    // Nell'ordine delle lavorazioni, qualunque sia l'ordine delle scelte.
+    assert_eq!(
+        voci.iter().map(|v| v.codice.as_str()).collect::<Vec<_>>(),
+        ["D.01", "M.01", "P.01", "P.02", "I.01", "D.03"]
+    );
+    let prova_e = verifica::prova(&s, &proposta, &scelte).unwrap();
+    assert!(!prova_e.applicato);
+    assert_eq!(totale(&prova_e), Some(Importo::new(dec!(1745.82))));
     assert!(
-        s.progetto().computi.first().unwrap().voci.is_empty(),
+        s.progetto().computi[0].voci.is_empty(),
         "la prova non modifica"
     );
 
-    // Esecuzione: i prezzi vengono dal prezzario, le note tracciano la lavorazione.
-    let e = s.esegui(&proposta.comandi).unwrap();
+    let e = s.esegui(&cmd).unwrap();
     assert_eq!(totale(&e), Some(Importo::new(dec!(1745.82))));
-    let computo = s.progetto().computi.first().unwrap();
+    let computo = &s.progetto().computi[0];
     assert_eq!(computo.voci.len(), 6);
-    let note = computo
-        .voci
-        .get(3)
-        .and_then(|v| v.note.clone())
-        .unwrap_or_default();
+    let note = computo.voci[3].note.clone().unwrap_or_default();
     assert!(note.starts_with("Assistente AI, L04"), "{note}");
     assert!(note.contains("I01 (porta di 0,80 x 2,10 m)"), "{note}");
     // Annullabile in un solo passo.
     s.annulla().unwrap();
-    assert!(s.progetto().computi.first().unwrap().voci.is_empty());
+    assert!(s.progetto().computi[0].voci.is_empty());
     assert!(s.progetto().elenco_prezzi.voci.is_empty());
+
+    // Due opzioni spuntate per la stessa lavorazione: due voci con le stesse misure.
+    let doppie = [scelta("L03", &["P.01", "P.05"])];
+    // 6,00 × 52,00 + 6,00 × 34,50 = 519,00 €.
+    assert_eq!(
+        prova(&s, &proposta, &doppie),
+        Some(Importo::new(dec!(519.00)))
+    );
 }
 
 #[test]
@@ -394,29 +443,18 @@ fn proposta_completa_e_maiuscole_negli_enum() {
     let p = prezzario();
     let c = candidati(&p, &["T.01"]);
     let s = sessione(&p);
-    let richiesta = "Tinteggiatura di una parete di 4 x 3 m";
-    let r = risposta(
-        "Completo",
-        vec![lav(
-            "L01",
-            &h(&c, "T.01").to_uppercase(),
-            "PRINCIPALE",
-            "",
-            "",
-            vec![riga(
-                "parete",
-                "Rettangolo",
-                "Positivo",
-                vec![
-                    par("n", "1", "N", "Utente", ""),
-                    u("L", "4", "m"),
-                    par("B", "300", "cm", "utente", ""),
-                ],
-            )],
-        )],
-        vec![],
-    );
-    let proposta = valida(&s, &p, &c, richiesta, &r);
+    let r = leggi_selezione(&json!({
+        "lavorazioni": [{
+            "id": "L01", "descrizione": "parete", "chiarezza": "Chiara", "da_precisare": "",
+            "righe": [riga("parete", "Rettangolo", "Positivo", vec![
+                par("n", "1", "N", "Utente", ""), u("L", "4", "m"), par("B", "300", "cm", "utente", "")
+            ])],
+            "opzioni": [{"candidato": h(&c, "T.01").to_uppercase(), "pertinenza": "ALTA", "motivazione": "idropittura"}]
+        }],
+        "ipotesi": [], "informazioni_mancanti": []
+    }))
+    .unwrap();
+    let proposta = valida(&s, &p, &c, "Tinteggiatura di una parete di 4 x 3 m", &r);
     assert_eq!(
         proposta.esito,
         EsitoProposta::Completo,
@@ -424,8 +462,10 @@ fn proposta_completa_e_maiuscole_negli_enum() {
         proposta.avvisi
     );
     // 300 cm = 3 m, trovato nella richiesta; 4 × 3 = 12,00 m² × 7,20 = 86,40 €.
-    let prova = verifica::prova(&s, &proposta).unwrap();
-    assert_eq!(totale(&prova), Some(Importo::new(dec!(86.40))));
+    assert_eq!(
+        prova(&s, &proposta, &proposta.scelte_predefinite()),
+        Some(Importo::new(dec!(86.40)))
+    );
 }
 
 #[test]
@@ -435,14 +475,10 @@ fn unita_non_base_e_forme_con_formula() {
     let s = sessione(&p);
     let richiesta = "Fornitura di 2 travi in acciaio lunghe 6 m da 30,6 kg/m; 8 pali di diametro 60 cm profondi 12 m; allestimento del cantiere";
     let r = risposta(
-        "completo",
         vec![
             lav(
                 "L01",
-                &h(&c, "C.03"),
-                "principale",
-                "",
-                "",
+                vec![op(&c, "C.03", "alta")],
                 vec![riga(
                     "travi",
                     "massa_lineare",
@@ -452,10 +488,7 @@ fn unita_non_base_e_forme_con_formula() {
             ),
             lav(
                 "L02",
-                &h(&c, "C.04"),
-                "principale",
-                "",
-                "",
+                vec![op(&c, "C.04", "alta")],
                 vec![riga(
                     "pali",
                     "cilindro",
@@ -465,10 +498,7 @@ fn unita_non_base_e_forme_con_formula() {
             ),
             lav(
                 "L03",
-                &h(&c, "A.01"),
-                "principale",
-                "",
-                "",
+                vec![op(&c, "A.01", "alta")],
                 vec![riga("cantiere", "a_corpo", "positivo", vec![])],
             ),
         ],
@@ -481,324 +511,327 @@ fn unita_non_base_e_forme_con_formula() {
         "{:?}",
         proposta.avvisi
     );
-    let Some(Comando::AggiungiVoceComputo { righi, .. }) = proposta.comandi.get(1) else {
+    let (cmd, _) = comandi(&proposta, &proposta.scelte_predefinite(), s.progetto()).unwrap();
+    let Some(Comando::AggiungiVoceComputo { righi, .. }) = cmd.get(1) else {
         panic!("comando inatteso");
     };
-    assert_eq!(
-        righi.first().and_then(|r| r.formula.as_deref()),
-        Some("(par*lun*alt)/1000")
-    );
+    assert_eq!(righi[0].formula.as_deref(), Some("(par*lun*alt)/1000"));
     // Travi: 2 × 6 × 30,6 / 1000 = 0,3672 → 0,37 t × 2.150,00 = 795,50
     // Pali: 8 × π × 0,60² / 4 × 12 = 27,1434 → 27,14 m³ × 210,00 = 5.699,40
     // Cantiere: 1 × 1.500,00
-    let prova = verifica::prova(&s, &proposta).unwrap();
-    assert_eq!(totale(&prova), Some(Importo::new(dec!(7994.90))));
+    assert_eq!(
+        prova(&s, &proposta, &proposta.scelte_predefinite()),
+        Some(Importo::new(dec!(7994.90)))
+    );
 }
 
 // ---------------------------------------------------------------- controlli
 
-/// Una lavorazione di tinteggiatura modificata da `f`; restituisce i codici degli avvisi
-/// e se la lavorazione è stata esclusa.
-fn controlla(f: impl FnOnce(&mut Value, &Candidati)) -> (Vec<String>, bool, Proposta) {
+#[test]
+fn opzioni_ordinate_controllate_e_limitate() {
     let p = prezzario();
-    let c = candidati(&p, &["T.01", "S.02", "O.01"]);
-    let s = sessione(&p);
-    let mut l = lav(
-        "L01",
-        &h(&c, "T.01"),
-        "principale",
-        "",
-        "",
-        vec![riga(
-            "parete",
-            "rettangolo",
-            "positivo",
-            vec![u("N", "1", "n"), u("L", "4", "m"), u("B", "3", "m")],
-        )],
+    let c = candidati(
+        &p,
+        &[
+            "T.01", "T.02", "T.03", "P.02", "P.03", "S.02", "P.01", "P.05", "M.01",
+        ],
     );
-    f(&mut l, &c);
-    let r = leggi_selezione(&json!({
-        "esito": "completo", "lavorazioni": [l],
-        "ipotesi": [{"id": "I01", "testo": "altezza standard", "impatto": "basso"}],
-        "informazioni_mancanti": []
-    }))
-    .unwrap();
-    let proposta = valida(&s, &p, &c, "Tinteggiatura di una parete di 4 x 3 m", &r);
-    let esclusa = !proposta.escluse.is_empty();
-    (codici_avvisi(&proposta), esclusa, proposta)
+    let s = sessione(&p);
+    let r = risposta(
+        vec![lav(
+            "L01",
+            vec![
+                op(&c, "T.03", "media"),
+                json!({"candidato": "c99", "pertinenza": "alta", "motivazione": "inventato"}),
+                op(&c, "T.01", "alta"),
+                op(&c, "T.01", "alta"),
+                op(&c, "P.03", "alta"), // in m: le misure danno una superficie
+                op(&c, "S.02", "bassa"), // m²/mese: nessuna forma, misura manuale
+                op(&c, "T.02", "bassa"),
+                op(&c, "P.02", "bassa"),
+                op(&c, "P.01", "bassa"),
+                op(&c, "P.05", "bassa"),
+            ],
+            vec![rettangolo("4", "3")],
+        )],
+        vec![],
+    );
+    let proposta = valida(&s, &p, &c, "parete 4 x 3 m", &r);
+    let l = proposta.lavorazione("L01").unwrap();
+    // Ordine: pertinenza, poi l'ordine del modello; al massimo 5.
+    let codici: Vec<&str> = l.opzioni.iter().map(|o| o.codice.as_str()).collect();
+    assert_eq!(codici, ["T.01", "T.03", "S.02", "T.02", "P.02"]);
+    assert!(l.opzioni[0].preselezionata && l.opzioni.iter().skip(1).all(|o| !o.preselezionata));
+    assert!(l.opzioni[2].misura_manuale);
+    let mut avvisi = codici_avvisi(&proposta);
+    avvisi.sort();
+    avvisi.dedup();
+    assert_eq!(
+        avvisi,
+        [
+            "assistente.candidato_inesistente",
+            "assistente.misura_manuale",
+            "assistente.opzione_ripetuta",
+            "assistente.unita_incompatibile"
+        ]
+    );
+    // Sono dettagli: la proposta resta completa.
+    assert!(
+        proposta
+            .avvisi
+            .iter()
+            .all(|a| a.gravita == Gravita::Informazione)
+    );
+    assert_eq!(proposta.esito, EsitoProposta::Completo);
+    // La voce in m²/mese entra con un rigo vuoto che riporta le misure.
+    let (cmd, voci) = comandi(&proposta, &[scelta("L01", &["S.02"])], s.progetto()).unwrap();
+    assert!(voci[0].da_completare);
+    let Some(Comando::AggiungiVoceComputo { righi, note, .. }) = cmd.last() else {
+        panic!()
+    };
+    assert_eq!(righi.len(), 1);
+    assert!(righi[0].parti_uguali.is_none() && righi[0].lunghezza.is_none());
+    assert!(
+        righi[0].descrizione.contains("L = 4 m, B = 3 m"),
+        "{}",
+        righi[0].descrizione
+    );
+    assert!(
+        note.as_deref()
+            .unwrap_or_default()
+            .ends_with("Misure da completare.")
+    );
 }
-
-fn parametri(l: &mut Value) -> &mut Vec<Value> {
-    l["righe"][0]["parametri"].as_array_mut().unwrap()
-}
-
-/// Modifica di una lavorazione di prova.
-type Modifica = Box<dyn FnOnce(&mut Value, &Candidati)>;
 
 #[test]
-fn ogni_controllo_ha_il_suo_codice() {
-    let casi: Vec<(&str, Modifica, &str)> = vec![
-        (
-            "handle mai inviato",
-            Box::new(|l, _| l["candidato"] = json!("c98")),
-            "assistente.candidato_inesistente",
-        ),
-        (
-            "forma di lunghezza su voce in m²",
-            Box::new(|l, _| {
-                l["righe"][0]["forma"] = json!("lunghezza");
-                parametri(l).truncate(2);
-            }),
-            "assistente.unita_incompatibile",
-        ),
-        (
-            "parametro mancante",
-            Box::new(|l, _| {
-                parametri(l).pop();
-            }),
-            "assistente.parametri_errati",
-        ),
-        (
-            "parametro in più",
-            Box::new(|l, _| parametri(l).push(u("H", "3", "m"))),
-            "assistente.parametri_errati",
-        ),
-        (
-            "parametro ripetuto",
-            Box::new(|l, _| parametri(l).push(u("L", "4", "m"))),
-            "assistente.parametri_errati",
-        ),
-        (
-            "unità non ammessa",
-            Box::new(|l, _| l["righe"][0]["parametri"][1]["unita"] = json!("m2")),
-            "assistente.parametri_errati",
-        ),
-        (
-            "valore zero",
-            Box::new(|l, _| l["righe"][0]["parametri"][1]["valore"] = json!("0")),
-            "assistente.valore_non_valido",
-        ),
-        (
-            "N frazionario",
-            Box::new(|l, _| l["righe"][0]["parametri"][0]["valore"] = json!("1.5")),
-            "assistente.valore_non_valido",
-        ),
-        (
-            "ipotesi inesistente",
-            Box::new(|l, _| l["righe"][0]["parametri"][1] = par("L", "4", "m", "ipotesi", "I09")),
-            "assistente.ipotesi_inesistente",
-        ),
-        (
-            "principale con complementare_di",
-            Box::new(|l, _| l["complementare_di"] = json!("L02")),
-            "assistente.ruolo_incoerente",
-        ),
-        (
-            "alternativa senza gruppo",
-            Box::new(|l, _| l["ruolo"] = json!("alternativa")),
-            "assistente.ruolo_incoerente",
-        ),
-        (
-            "nessun rigo",
-            Box::new(|l, _| l["righe"] = json!([])),
-            "assistente.righe_assenti",
-        ),
-        (
-            "unità m²/mese",
-            Box::new(|l, c| l["candidato"] = json!(h(c, "S.02"))),
-            "assistente.unita_non_supportata",
-        ),
-        (
-            "unità oraria",
-            Box::new(|l, c| l["candidato"] = json!(h(c, "O.01"))),
-            "assistente.unita_non_supportata",
-        ),
-        (
-            "forma sconosciuta",
-            Box::new(|l, _| l["righe"][0]["forma"] = json!("sfera")),
-            "assistente.parametri_errati",
-        ),
-    ];
-    for (nome, modifica, atteso) in casi {
-        let (codici, esclusa, proposta) = controlla(modifica);
-        assert!(esclusa, "{nome}: non esclusa");
-        assert!(codici.iter().any(|c| c == atteso), "{nome}: {codici:?}");
-        assert!(proposta.comandi.is_empty(), "{nome}: nessun comando");
-        assert_eq!(proposta.esito, EsitoProposta::Impossibile, "{nome}");
+fn valori_da_completare_e_misure_corrette() {
+    let p = prezzario();
+    let c = candidati(&p, &["T.01"]);
+    let s = sessione(&p);
+    let r = risposta(
+        vec![lav(
+            "L01",
+            vec![op(&c, "T.01", "alta")],
+            vec![riga(
+                "pareti",
+                "rettangolo",
+                "positivo",
+                vec![
+                    u("N", "1", "n"),
+                    par("L", "", "m", "mancante", ""),
+                    par("H", "3", "m", "utente", ""), // non della forma: scartato
+                ],
+            )],
+        )],
+        vec![],
+    );
+    let proposta = valida(&s, &p, &c, "pareti alte 3 m", &r);
+    assert_eq!(proposta.esito, EsitoProposta::DaRivedere);
+    let l = proposta.lavorazione("L01").unwrap();
+    assert!(l.da_completare());
+    let par = &l.righe[0].parametri;
+    assert_eq!(
+        par.iter()
+            .map(|p| format!("{:?}", p.nome))
+            .collect::<Vec<_>>(),
+        ["N", "L", "B"]
+    );
+    assert!(par[1].valore.is_none() && par[2].valore.is_none());
+    assert_eq!(par[2].provenienza, ProvenienzaValore::Mancante);
+    assert_eq!(codici_avvisi(&proposta), ["assistente.parametro_scartato"]);
+
+    // Senza correzioni: rigo vuoto, nessuna quantità parziale.
+    let (cmd, voci) = comandi(&proposta, &proposta.scelte_predefinite(), s.progetto()).unwrap();
+    assert!(voci[0].da_completare);
+    let Some(Comando::AggiungiVoceComputo { righi, .. }) = cmd.last() else {
+        panic!()
+    };
+    assert_eq!(
+        righi[0].descrizione,
+        "pareti — da completare: N = 1, L = ?, B = ?"
+    );
+    assert!(righi[0].lunghezza.is_none());
+    let a = verifica::anteprima(&s, &proposta, &proposta.scelte_predefinite()).unwrap();
+    assert_eq!(a.opzioni[0].importo, Some(Importo::new(dec!(0.00))));
+    assert!(a.opzioni[0].da_completare);
+
+    // L'utente completa le misure: 16 × 2,70 = 43,20 m² × 7,20 = 311,04 €.
+    let misure = vec![BTreeMap::from([
+        ("L".to_owned(), "16".to_owned()),
+        ("B".to_owned(), "2,70".to_owned()),
+    ])];
+    let scelte = [Scelta {
+        lavorazione: "L01".into(),
+        codici: vec!["T.01".into()],
+        misure: Some(misure.clone()),
+    }];
+    assert_eq!(
+        prova(&s, &proposta, &scelte),
+        Some(Importo::new(dec!(311.04)))
+    );
+    let (cmd, voci) = comandi(&proposta, &scelte, s.progetto()).unwrap();
+    assert!(!voci[0].da_completare);
+    let Some(Comando::AggiungiVoceComputo { note, .. }) = cmd.last() else {
+        panic!()
+    };
+    assert!(
+        !note
+            .as_deref()
+            .unwrap_or_default()
+            .contains("da completare")
+    );
+    // Anteprima con le misure corrette anche senza opzioni spuntate.
+    let a = verifica::anteprima(
+        &s,
+        &proposta,
+        &[Scelta {
+            codici: vec![],
+            ..scelte[0].clone()
+        }],
+    )
+    .unwrap();
+    assert_eq!(a.opzioni[0].importo, Some(Importo::new(dec!(311.04))));
+    assert!(a.esito.is_none() && a.scelte.is_empty());
+    assert!(
+        a.errore
+            .is_some_and(|e| e.to_string() == "nessuna voce scelta")
+    );
+}
+
+#[test]
+fn scelte_non_valide() {
+    let p = prezzario();
+    let c = candidati(&p, &["T.01", "T.03"]);
+    let s = sessione(&p);
+    let r = risposta(
+        vec![lav(
+            "L01",
+            vec![op(&c, "T.01", "alta"), op(&c, "T.03", "media")],
+            vec![rettangolo("4", "3")],
+        )],
+        vec![],
+    );
+    let proposta = valida(&s, &p, &c, "parete 4 x 3 m", &r);
+    let errore = |scelte: Vec<Scelta>| comandi(&proposta, &scelte, s.progetto()).unwrap_err();
+    assert_eq!(errore(vec![]), ErroreScelta::NessunaScelta);
+    assert_eq!(
+        errore(vec![scelta("L01", &[])]),
+        ErroreScelta::NessunaScelta
+    );
+    assert!(matches!(
+        errore(vec![scelta("L09", &["T.01"])]),
+        ErroreScelta::Lavorazione { .. }
+    ));
+    assert!(matches!(
+        errore(vec![scelta("L01", &["P.01"])]),
+        ErroreScelta::Opzione { .. }
+    ));
+    let con_misure = |m: Vec<BTreeMap<String, String>>| Scelta {
+        misure: Some(m),
+        ..scelta("L01", &["T.01"])
+    };
+    let m = |k: &str, v: &str| BTreeMap::from([(k.to_owned(), v.to_owned())]);
+    for (misure, atteso) in [
+        (vec![], "0 righi di misure invece di 1"),
+        (vec![m("X", "1")], "parametro «X» non previsto"),
+        (vec![m("H", "1")], "parametro «H» non previsto"),
+        (vec![m("L", "abc")], "non è un numero maggiore di zero"),
+        (vec![m("L", "0")], "non è un numero maggiore di zero"),
+        (vec![m("N", "1.5")], "N deve essere intero"),
+    ] {
+        let e = errore(vec![con_misure(misure)]);
         assert!(
-            proposta
-                .avvisi
-                .iter()
-                .all(|a| a.lavorazione.as_deref() == Some("L01"))
+            matches!(e, ErroreScelta::Misure { .. }) && e.to_string().contains(atteso),
+            "{e}"
         );
     }
+    // Una misura svuotata rende il rigo da completare.
+    let (_, voci) = comandi(&proposta, &[con_misure(vec![m("B", "")])], s.progetto()).unwrap();
+    assert!(voci[0].da_completare);
 }
 
 #[test]
 fn valore_non_fondato_diventa_ipotesi() {
-    let (codici, esclusa, proposta) = controlla(|l, _| {
-        l["righe"][0]["parametri"][1] = u("L", "5", "m"); // la richiesta dice 4 x 3
-    });
-    assert!(!esclusa);
-    assert_eq!(codici, ["assistente.valore_non_fondato"]);
-    assert_eq!(proposta.esito, EsitoProposta::Provvisorio);
-    let r01 = proposta.ipotesi.iter().find(|i| i.id == "R01").unwrap();
-    assert!(r01.dalla_validazione);
-    let lav = proposta.lavorazioni.first().unwrap();
-    assert_eq!(lav.ipotesi, ["R01"]);
-    assert_eq!(
-        lav.righe
-            .first()
-            .and_then(|r| r.parametri.get(1))
-            .map(|p| p.provenienza.clone()),
-        Some(ProvenienzaValore::Ipotesi { id: "R01".into() })
-    );
-    // N = 1 non è una dimensione inventata: non serve trovarlo nel testo.
-    assert!(
-        lav.righe
-            .first()
-            .and_then(|r| r.parametri.first())
-            .is_some_and(|p| {
-                p.provenienza
-                    == ProvenienzaValore::Utente {
-                        testo: String::new(),
-                    }
-            })
-    );
-}
-
-#[test]
-fn lavorazione_esclusa_non_lascia_ipotesi_orfane() {
-    // Valore non fondato e parametro mancante nella stessa lavorazione: esclusa, e
-    // nessuna ipotesi R01 né avviso di valore non fondato.
-    let (codici, esclusa, proposta) = controlla(|l, _| {
-        l["righe"][0]["parametri"][1] = u("L", "5", "m");
-        parametri(l).pop();
-    });
-    assert!(esclusa);
-    assert_eq!(codici, ["assistente.parametri_errati"]);
-    assert!(proposta.ipotesi.iter().all(|i| !i.dalla_validazione));
-}
-
-#[test]
-fn nessuna_voce_pertinente() {
-    let (codici, esclusa, proposta) = controlla(|l, _| l["candidato"] = json!("NESSUNO"));
-    assert!(esclusa);
-    assert_eq!(codici, ["assistente.voce_non_trovata"]);
-    assert_eq!(
-        proposta.avvisi.first().map(|a| a.gravita),
-        Some(Gravita::Avviso)
-    );
-    assert_eq!(proposta.esito, EsitoProposta::Impossibile);
-}
-
-#[test]
-fn duplicati_alternative_e_complementari() {
     let p = prezzario();
-    let c = candidati(&p, &["T.01", "P.01", "P.02"]);
+    let c = candidati(&p, &["T.01"]);
     let s = sessione(&p);
-    let parete = |l: &str| {
-        riga(
-            "parete",
-            "rettangolo",
-            "positivo",
-            vec![u("N", "1", "n"), u("L", l, "m"), u("B", "3", "m")],
-        )
-    };
     let r = risposta(
-        "completo",
+        vec![lav(
+            "L01",
+            vec![op(&c, "T.01", "alta")],
+            vec![rettangolo("4", "3.5")],
+        )],
+        vec![],
+    );
+    let proposta = valida(&s, &p, &c, "parete lunga 4 m", &r);
+    assert_eq!(codici_avvisi(&proposta), ["assistente.valore_non_fondato"]);
+    assert_eq!(proposta.esito, EsitoProposta::DaRivedere);
+    assert_eq!(proposta.ipotesi.len(), 1);
+    assert!(proposta.ipotesi[0].dalla_validazione);
+    assert_eq!(
+        proposta.lavorazioni[0].righe[0].parametri[2].provenienza,
+        ProvenienzaValore::Ipotesi { id: "R01".into() }
+    );
+}
+
+#[test]
+fn righi_scartati_e_lavorazioni_senza_voce() {
+    let p = prezzario();
+    let c = candidati(&p, &["T.01", "P.03"]);
+    let s = sessione(&p);
+    let r = risposta(
         vec![
             lav(
                 "L01",
-                &h(&c, "T.01"),
-                "principale",
-                "",
-                "",
-                vec![parete("4")],
+                vec![op(&c, "T.01", "alta")],
+                vec![
+                    rettangolo("4", "3"),
+                    riga(
+                        "cornice",
+                        "lunghezza",
+                        "positivo",
+                        vec![u("N", "1", "n"), u("L", "4", "m")],
+                    ),
+                    riga("strana", "esagono", "positivo", vec![]),
+                ],
             ),
-            lav(
-                "L02",
-                &h(&c, "T.01"),
-                "principale",
-                "",
-                "",
-                vec![parete("4.0")],
-            ), // stesse misure
+            lav("L02", vec![], vec![rettangolo("4", "3")]),
             lav(
                 "L03",
-                &h(&c, "T.01"),
-                "principale",
-                "",
-                "",
-                vec![parete("3")],
-            ), // altre misure
-            lav(
-                "L04",
-                &h(&c, "P.01"),
-                "alternativa",
-                "finitura",
-                "",
-                vec![parete("4")],
-            ),
-            lav(
-                "L05",
-                &h(&c, "P.02"),
-                "alternativa",
-                "Finitura",
-                "",
-                vec![parete("4")],
-            ),
-            lav(
-                "L06",
-                &h(&c, "T.01"),
-                "complementare",
-                "",
-                "L09",
-                vec![parete("2")],
+                vec![op(&c, "P.03", "alta")],
+                vec![rettangolo("4", "3")],
             ),
         ],
-        vec![],
+        vec![json!({"id": "I09", "testo": "mai usata", "impatto": "basso"})],
     );
-    let proposta = valida(&s, &p, &c, "pareti di 4 x 3 m, 3 x 3 m e 2 x 3 m", &r);
-    let per_lav: Vec<(String, Option<String>)> = proposta
-        .avvisi
-        .iter()
-        .map(|a| (a.codice.clone(), a.lavorazione.clone()))
-        .collect();
-    let atteso = |c: &str, l: &str| (format!("assistente.{c}"), Some(l.to_owned()));
-    assert!(per_lav.contains(&atteso("duplicato", "L02")), "{per_lav:?}");
+    let proposta = valida(&s, &p, &c, "parete 4 x 3 m", &r);
+    assert_eq!(proposta.lavorazione("L01").unwrap().righe.len(), 1);
+    assert_eq!(proposta.senza_voce.len(), 2);
     assert!(
-        per_lav.contains(&atteso("possibile_doppio_conteggio", "L03")),
-        "{per_lav:?}"
+        proposta.senza_voce[0]
+            .motivo
+            .starts_with("nessuna voce pertinente")
     );
     assert!(
-        per_lav.contains(&atteso("alternativa_non_inclusa", "L05")),
-        "{per_lav:?}"
+        proposta.senza_voce[1].motivo.contains("P.03 è in «m»"),
+        "{}",
+        proposta.senza_voce[1].motivo
     );
     assert!(
-        per_lav.contains(&atteso("complementare_senza_principale", "L06")),
-        "{per_lav:?}"
+        proposta.ipotesi.is_empty(),
+        "le ipotesi non usate non restano"
     );
-    assert_eq!(
-        proposta
-            .escluse
-            .iter()
-            .map(|e| e.id.as_str())
-            .collect::<Vec<_>>(),
-        ["L02"]
+    assert_eq!(proposta.esito, EsitoProposta::DaRivedere);
+    // Nessuna opzione da nessuna parte: proposta vuota.
+    let vuota = valida(
+        &s,
+        &p,
+        &c,
+        "",
+        &risposta(vec![lav("L01", vec![], vec![])], vec![]),
     );
-    // L01, L03, L04, L06 nel computo; L05 resta come alternativa non inclusa.
-    let aggiunte = proposta
-        .comandi
-        .iter()
-        .filter(|c| matches!(c, Comando::AggiungiVoceComputo { .. }))
-        .count();
-    assert_eq!(aggiunte, 4);
-    assert_eq!(
-        proposta.lavorazioni.iter().filter(|l| !l.inclusa).count(),
-        1
-    );
-    assert_eq!(proposta.esito, EsitoProposta::Provvisorio);
+    assert_eq!(vuota.esito, EsitoProposta::Vuoto);
+    assert!(vuota.scelte_predefinite().is_empty());
 }
 
 #[test]
@@ -811,19 +844,10 @@ fn prezzo_dell_elenco_prevale() {
     ])).unwrap())
     .unwrap();
     let r = risposta(
-        "completo",
         vec![lav(
             "L01",
-            &h(&c, "T.01"),
-            "principale",
-            "",
-            "",
-            vec![riga(
-                "parete",
-                "rettangolo",
-                "positivo",
-                vec![u("N", "1", "n"), u("L", "4", "m"), u("B", "3", "m")],
-            )],
+            vec![op(&c, "T.01", "alta")],
+            vec![rettangolo("4", "3")],
         )],
         vec![],
     );
@@ -832,10 +856,19 @@ fn prezzo_dell_elenco_prevale() {
         codici_avvisi(&proposta),
         ["assistente.prezzo_elenco_diverso"]
     );
+    let o = &proposta.lavorazioni[0].opzioni[0];
+    assert_eq!(o.prezzo.to_string(), "8.00");
+    assert_eq!(
+        o.prezzo_prezzario.map(|p| p.to_string()),
+        Some("7.20".into())
+    );
     // Nessuna copia dal prezzario: la voce c'è già. 12,00 m² × 8,00 = 96,00 €.
-    assert_eq!(proposta.comandi.len(), 1);
-    let prova = verifica::prova(&s, &proposta).unwrap();
-    assert_eq!(totale(&prova), Some(Importo::new(dec!(96.00))));
+    let (cmd, _) = comandi(&proposta, &proposta.scelte_predefinite(), s.progetto()).unwrap();
+    assert_eq!(cmd.len(), 1);
+    assert_eq!(
+        prova(&s, &proposta, &proposta.scelte_predefinite()),
+        Some(Importo::new(dec!(96.00)))
+    );
 }
 
 #[test]
@@ -851,19 +884,13 @@ fn risposte_inutilizzabili() {
         progetto: s.progetto(),
         computo: None,
     };
-    let r = risposta("forse", vec![], vec![]);
-    assert!(matches!(
-        valida_selezione(&r, &ctx),
-        Err(ErroreRisposta::EsitoSconosciuto { .. })
-    ));
-    let l = lav("L01", "c01", "principale", "", "", vec![]);
-    let r = risposta("completo", vec![l.clone(), l], vec![]);
+    let l = lav("L01", vec![], vec![]);
+    let r = risposta(vec![l.clone(), l], vec![]);
     assert!(matches!(
         valida_selezione(&r, &ctx),
         Err(ErroreRisposta::IdRipetuto { .. })
     ));
     let r = risposta(
-        "completo",
         vec![],
         vec![
             json!({"id": "I01", "testo": "a", "impatto": "basso"}),
@@ -875,14 +902,9 @@ fn risposte_inutilizzabili() {
         Err(ErroreRisposta::IdRipetuto { .. })
     ));
     assert!(matches!(
-        leggi_selezione(&json!({"esito": "completo"})),
+        leggi_selezione(&json!({"lavorazioni": []})),
         Err(ErroreRisposta::NonConforme { .. })
     ));
-    // Nessuna lavorazione: impossibile, senza comandi.
-    let vuota = valida_selezione(&risposta("completo", vec![], vec![]), &ctx).unwrap();
-    assert_eq!(vuota.esito, EsitoProposta::Impossibile);
-    assert!(vuota.comandi.is_empty());
-    assert!(verifica::prova(&s, &vuota).is_err());
 }
 
 #[test]
@@ -891,24 +913,15 @@ fn prova_senza_prezzario_caricato_e_rifiutata() {
     let c = candidati(&p, &["T.01"]);
     let s = Sessione::nuovo("Senza prezzario");
     let r = risposta(
-        "completo",
         vec![lav(
             "L01",
-            &h(&c, "T.01"),
-            "principale",
-            "",
-            "",
-            vec![riga(
-                "parete",
-                "rettangolo",
-                "positivo",
-                vec![u("N", "1", "n"), u("L", "4", "m"), u("B", "3", "m")],
-            )],
+            vec![op(&c, "T.01", "alta")],
+            vec![rettangolo("4", "3")],
         )],
         vec![],
     );
     let proposta = valida(&s, &p, &c, "4 x 3 m", &r);
-    let e = verifica::prova(&s, &proposta).unwrap_err();
+    let e = verifica::prova(&s, &proposta, &proposta.scelte_predefinite()).unwrap_err();
     assert!(
         e.to_string()
             .contains("prezzario caricato «prova» inesistente"),
