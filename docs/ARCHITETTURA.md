@@ -5,8 +5,10 @@
 Il progetto è un workspace Cargo. Esistono `opencomputo-core` (Fase 1),
 `opencomputo-format-xpwe` e `opencomputo-dcf-parser` (Fase 2), `opencomputo-io`
 (Fase 3), `opencomputo-storage`, `opencomputo-application` e `opencomputo-agent-api`
-(Fase 4), `opencomputo-gui` (Fase 5). Nessun crate è stato creato vuoto: ognuno è
-stato aggiunto nella fase in cui ha ricevuto un'implementazione reale.
+(Fase 4), `opencomputo-gui` (Fase 5), `opencomputo-format-listino` e
+`opencomputo-assistente` (assistente AI, fase 2 dell'ADR 0025). Nessun crate è stato
+creato vuoto: ognuno è stato aggiunto nella fase in cui ha ricevuto un'implementazione
+reale.
 
 | Crate | Responsabilità | Fase | Stato |
 |-------|----------------|------|-------|
@@ -18,6 +20,8 @@ stato aggiunto nella fase in cui ha ricevuto un'implementazione reale.
 | `opencomputo-storage` | file di progetto, salvataggi atomici, copie di sicurezza | 4 | **presente** |
 | `opencomputo-agent-api` | binario `opencomputo`: CLI e servizio JSON per agenti AI | 4 | **presente** |
 | `opencomputo-gui` | applicazione desktop multifinestra (Tauri v2) | 5 | **presente** ([ADR 0009](adr/0009-gui-tauri.md)) |
+| `opencomputo-format-listino` | lettura di listini prezzi CSV e JSON | assistente 2 | **presente** ([ADR 0025](adr/0025-assistente-ai.md)) |
+| `opencomputo-assistente` | assistente AI: ricerca nei prezzari, validazione delle risposte del modello, traduzione in comandi | assistente 2 | **presente**, senza chiamate ai provider ([ADR 0025](adr/0025-assistente-ai.md)) |
 
 ## Dipendenze consentite tra i crate
 
@@ -27,8 +31,15 @@ gui ──► agent-api (servizio JSON) ──► application ──► core
                                           ├──► storage ──► core
                                           ├──► format-xpwe ──► core
                                           ├──► dcf-parser ──► core
+                                          ├──► format-listino ──► core
                                           └──► io ──► core
+
+assistente ──► application ──► core
 ```
+
+L'assistente costruisce comandi di `application` e li prova nella `Sessione`: non scrive
+il modello e non calcola quantità né importi (ADR 0025). Le chiamate ai provider AI
+arriveranno nella fase 3 dell'assistente, in un modulo separato dalla validazione.
 
 La GUI usa lo stesso servizio JSON della CLI e degli agenti (ADR 0009): non esiste una
 via di modifica riservata all'interfaccia grafica.
@@ -87,6 +98,31 @@ restituisce testo. Il parser XML non risolve entità esterne né DTD.
 
 Il crate non decifra i flussi protetti, rispetta la password di apertura e non scrive
 protezioni né codici di autenticazione.
+
+## Organizzazione di `opencomputo-format-listino`
+
+| Modulo | Contenuto |
+|--------|-----------|
+| `csv` | lettore CSV (RFC 4180) con riconoscimento del separatore di campo |
+| `numeri` | numeri all'italiana o con il punto; riconoscimento del separatore decimale per file |
+| `colonne` | nomi alternativi delle colonne, configurabili, e colonne obbligatorie |
+| `importa` | CSV/JSON → `Prezzario` con capitoli, rapporto di righe importate e scartate, impronta SHA-256 |
+
+Dipende solo da `opencomputo-core`; nessuna dipendenza esterna nuova.
+
+## Organizzazione di `opencomputo-assistente`
+
+| Modulo | Contenuto |
+|--------|-----------|
+| `testo` | normalizzazione dell'italiano, parole vuote, radici leggere, trigrammi |
+| `unita` | dimensione e fattore delle unità di misura dei prezzari |
+| `ricerca` | indice testuale BM25 in interi a virgola fissa, termini simili per trigrammi, filtri |
+| `candidati` | candidati con handle per una sola richiesta; vista per il modello senza codici né prezzi |
+| `valori` | valori numerici della richiesta («valori fondati») e confronto nell'unità base |
+| `forme` | catalogo chiuso delle forme di rigo e traduzione in righi di misura del core |
+| `risposta`, `schema` | risposte del modello e schemi JSON per il tool use con `strict: true` |
+| `proposta` | validazione della risposta, proposta tracciata, comandi |
+| `verifica` | prova dei comandi nella `Sessione` |
 
 ## Organizzazione di `opencomputo-io`
 
@@ -183,3 +219,5 @@ Le decisioni sono registrate in [`adr/`](adr/):
 * [0012 — Stato finale, conto finale, collaudo e rata di saldo](adr/0012-conto-finale.md)
 * [0013 — Analisi prezzi dinamiche, fabbisogno di cantiere e nuovi prezzi](adr/0013-analisi-e-nuovi-prezzi.md)
 * [0014 — Variabili nelle analisi, oneri aziendali della sicurezza, aggiornamento dei prezzi, computo con analisi](adr/0014-variabili-e-aggiornamento-prezzi.md)
+* Le decisioni dalla 0015 alla 0024 sono nella cartella [`adr/`](adr/).
+* [0025 — Assistente AI per il computo e listini CSV/JSON](adr/0025-assistente-ai.md)

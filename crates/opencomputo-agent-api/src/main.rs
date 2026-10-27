@@ -75,7 +75,7 @@ enum Sotto {
         /// Parole da cercare (tutte devono comparire).
         #[arg(required = true)]
         testo: Vec<String>,
-        /// Cerca in questo prezzario (DCF, XPWE o .ocp) invece che nel progetto.
+        /// Cerca in questo prezzario (DCF, XPWE, .ocp, listino CSV o JSON) invece che nel progetto.
         #[arg(long)]
         prezzario: Option<PathBuf>,
         /// Voci restituite al massimo.

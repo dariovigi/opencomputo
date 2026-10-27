@@ -151,6 +151,30 @@ computo può pescare direttamente da un prezzario caricato.
 I prezzari distribuiti da ACCA hanno condizioni d'uso proprie: rispettarle è
 responsabilità di chi li importa.
 
+### Listini CSV e JSON
+
+Un prezzario si può caricare anche da un listino **CSV** o **JSON**, per esempio
+esportato da un foglio di calcolo. Dalla finestra *Carica prezzario…* si possono scegliere
+per ora i file JSON; i CSV si caricano dalla riga di comando:
+
+```sh
+opencomputo cerca progetto.ocp "massetto" --prezzario listino.csv
+opencomputo esegui progetto.ocp --prezzario listino=listino.csv < comandi.json
+```
+
+* **CSV**: la prima riga è l'intestazione. Servono le colonne codice (o tariffa),
+  descrizione, unità di misura (anche «U.M.» o «UM») e prezzo; facoltative descrizione
+  breve, capitolo e descrizione del capitolo, natura («oneri della sicurezza»), incidenza
+  della manodopera e della sicurezza. Il separatore (`;`, `,` o tabulazione) e la virgola
+  o il punto decimale si riconoscono da soli. Testo in UTF-8 o Windows-1252.
+* **JSON**: un oggetto con `voci` (e, facoltativi, `nome`, `ente`, `edizione`,
+  `data_pubblicazione`, `capitoli`) oppure un elenco di voci. Ogni voce ha `codice`,
+  `descrizione`, `unita_misura`, `prezzo`.
+* Le righe con codice, descrizione o unità vuoti, prezzo non valido o negativo, o un
+  codice già presente vengono **scartate e segnalate** con il numero di riga; un prezzo
+  zero o un'incidenza fuori da 0–100 sono segnalati ma la voce resta. I capitoli figli
+  (`M.01` sotto `M`) si riconoscono dal codice.
+
 ### Aggiornamento da listino
 
 Per portare l'elenco prezzi a un listino nuovo, per esempio il prezzario regionale

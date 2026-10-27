@@ -1,0 +1,23 @@
+Codice;Capitolo;Descrizione capitolo;Descrizione;UM;Prezzo;Natura
+E.01;E;Scavi e rinterri;Scavo di sbancamento eseguito con mezzi meccanici, compreso il carico su automezzo;m³;8,50;
+E.02;E;Scavi e rinterri;Scavo a sezione obbligata per fondazioni, fino a 2 m di profondità;m³;14,20;
+E.03;E;Scavi e rinterri;Rinterro con materiale proveniente dagli scavi;m³;6,80;
+M.01;M;Massetti e sottofondi;Massetto in sabbia e cemento per sottofondo di pavimenti, spessore 5 cm;m²;18,40;
+M.02;M;Massetti e sottofondi;Sovrapprezzo al massetto per ogni centimetro di spessore in più;m²;3,10;
+P.01;P;Pavimenti e rivestimenti;Pavimento in piastrelle di gres porcellanato posate a colla;m²;52,00;
+P.02;P;Pavimenti e rivestimenti;Rivestimento di pareti in piastrelle di ceramica smaltata;m²;46,50;
+P.03;P;Pavimenti e rivestimenti;Battiscopa in gres porcellanato;m;9,80;
+D.01;D;Demolizioni e rimozioni;Demolizione di pavimento in piastrelle, compreso il sottofondo;m²;14,00;
+D.02;D;Demolizioni e rimozioni;Demolizione di tramezzi in laterizio forato;m²;11,50;
+D.03;D;Demolizioni e rimozioni;Rimozione di apparecchi sanitari, compreso il trasporto a discarica;cad;35,00;
+I.01;I;Impianti idrico-sanitari;Fornitura e posa di vaso igienico in ceramica;cad;280,00;
+I.02;I;Impianti idrico-sanitari;Piatto doccia in ceramica 80x80 cm;cad;320,00;
+C.01;C;Calcestruzzi e acciai;Calcestruzzo per strutture in classe C25/30;m³;145,30;
+C.02;C;Calcestruzzi e acciai;Acciaio in barre B450C per armature;kg;1,35;
+C.03;C;Calcestruzzi e acciai;Acciaio per carpenteria in profilati laminati;t;2.150,00;
+C.04;C;Calcestruzzi e acciai;Pali trivellati in calcestruzzo armato;m³;210,00;
+T.01;T;Tinteggiature;Tinteggiatura con idropittura lavabile, due mani;m²;7,20;
+S.01;S;Sicurezza;Recinzione provvisoria di cantiere;m;12,00;Oneri della sicurezza
+S.02;S;Sicurezza;Noleggio di ponteggio metallico;m²/mese;4,50;Oneri della sicurezza
+O.01;O;Mano d'opera;Operaio specializzato;h;38,00;
+A.01;A;Opere a corpo;Allestimento del cantiere;a corpo;1.500,00;

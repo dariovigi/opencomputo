@@ -44,6 +44,10 @@ del PDF sono le metriche Adobe Core 14, liberamente distribuibili.
 `opencomputo-storage` e `opencomputo-application` non aggiungono dipendenze esterne
 (usano `flate2`, `serde`, `serde_json`, `thiserror`, `uuid`, `chrono`, `rust_decimal`).
 
+`opencomputo-format-listino` e `opencomputo-assistente` (ADR 0025) non aggiungono
+dipendenze esterne: usano `encoding_rs`, `sha2`, `serde`, `serde_json`, `thiserror`,
+`chrono` e `rust_decimal`, già presenti. Il lettore CSV è scritto nel crate.
+
 Dipendenze dirette aggiuntive di `opencomputo-agent-api`:
 
 | Crate | Uso | Licenza |

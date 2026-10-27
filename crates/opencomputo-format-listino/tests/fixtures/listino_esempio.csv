@@ -1,0 +1,15 @@
+Tariffa;Capitolo;Descrizione capitolo;Descrizione;U.M.;Prezzo;% Manodopera;Natura;Note
+E.01;E;Scavi;Scavo di sbancamento con mezzi meccanici;m³;8,50;25,5;;
+E.02;E;Scavi;"Scavo a sezione obbligata; fino a 2 m di profondità";m³;14,20;30;;terreno sciolto
+E.01;E;Scavi;Doppione dello scavo;m³;9,00;;;
+;E;Scavi;Voce senza codice;m³;1,00;;;
+E.03;E;Scavi;Rinterro;m³;abc;;;
+E.04;E;Scavi;Voce con prezzo negativo;m³;-2,00;;;
+;;;;;;;;
+M.01.01;M.01;Murature in laterizio;"Muratura in blocchi
+di laterizio, spessore 30 cm";m²;1.234,56;40;;
+M.01.02;M.01;Murature in laterizio;Tramezzo in forati;m²;32,10;150;;
+M.02;M;Murature;Voce da verificare;m²;0,00;;;
+S.01;S;Sicurezza;Recinzione di cantiere;m;12,00;;Oneri della sicurezza;
+S.02;S;Sicurezza;Cartellonistica;cad;45,00;;fornitura;
+X.01;X;Varie;Voce con campi in più;cad;1,00;;;;extra

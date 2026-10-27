@@ -12,6 +12,7 @@ opencomputo-core = { path = "../opencomputo-core" }
 opencomputo-storage = { path = "../opencomputo-storage" }
 opencomputo-format-xpwe = { path = "../opencomputo-format-xpwe" }
 opencomputo-dcf-parser = { path = "../opencomputo-dcf-parser" }
+opencomputo-format-listino = { path = "../opencomputo-format-listino" }
 opencomputo-io = { path = "../opencomputo-io" }
 serde.workspace = true
 serde_json.workspace = true

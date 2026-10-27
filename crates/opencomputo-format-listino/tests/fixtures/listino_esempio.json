@@ -1,0 +1,30 @@
+{
+  "formato": "opencomputo-listino",
+  "versione": 1,
+  "nome": "Listino di prova",
+  "ente": "Ente sintetico",
+  "edizione": "2026",
+  "data_pubblicazione": "2026-01-15",
+  "fonte": "dati inventati per i test",
+  "capitoli": [
+    {"codice": "E.01", "descrizione": "Scavi a sezione", "padre": "E"},
+    {"codice": "E", "descrizione": "Scavi e movimenti di terra"},
+    {"codice": "P", "descrizione": "Pavimenti"},
+    {"codice": "Z", "descrizione": "Capitolo con padre sbagliato", "padre": "NON_ESISTE"}
+  ],
+  "voci": [
+    {"codice": "E.01.001", "descrizione": "Scavo a sezione obbligata", "unita_misura": "m³",
+     "prezzo": 14.2, "capitolo": "E.01", "incidenza_manodopera": "30,5"},
+    {"codice": "E.01.002", "descrizione_breve": "Rinterro", "unita_misura": "m³",
+     "prezzo": "6,80", "capitolo": "E.01", "codice_regionale": "R-77", "tag": ["a", "b"]},
+    {"codice": "P.001", "descrizione": "Pavimento in gres porcellanato", "unita_misura": "m²",
+     "prezzo": "45,00", "capitolo": "P", "natura": "lavoro"},
+    {"codice": "P.001", "descrizione": "Doppione", "unita_misura": "m²", "prezzo": "1"},
+    {"codice": "P.002", "descrizione": "Senza prezzo", "unita_misura": "m²"},
+    {"codice": "P.003", "descrizione": "Prezzo come oggetto", "unita_misura": "m²",
+     "prezzo": {"valore": 3}},
+    "non sono una voce",
+    {"codice": "S.001", "descrizione": "Recinzione", "unita_misura": "m", "prezzo": 12,
+     "capitolo": "S", "natura": "oneri sicurezza"}
+  ]
+}

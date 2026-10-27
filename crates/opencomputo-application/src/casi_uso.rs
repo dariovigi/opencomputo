@@ -1,4 +1,4 @@
-//! Casi d'uso che coinvolgono i formati esterni: import XPWE e DCF, export XPWE,
+//! Casi d'uso che coinvolgono i formati esterni: import XPWE, DCF e listini CSV/JSON, export XPWE,
 //! report. Restituiscono byte e rapporti: la scrittura su disco spetta al chiamante.
 
 use opencomputo_core::id::{ComputoId, GeneratoreSequenziale};
@@ -94,7 +94,45 @@ pub fn importa_dcf(
     Ok((Sessione::new(p), r))
 }
 
-/// Prezzario di consultazione da un file DCF, XPWE o di progetto, riconosciuto dal contenuto.
+/// `true` se il primo carattere significativo (dopo BOM e spazi) è `<`.
+fn sembra_xml(byte: &[u8]) -> bool {
+    let senza_bom = byte.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(byte);
+    senza_bom.iter().find(|b| !b.is_ascii_whitespace()) == Some(&b'<')
+}
+
+/// Prezzario da un listino CSV o JSON (ADR 0025).
+///
+/// # Errors
+/// Listino vuoto, colonne obbligatorie mancanti, nessuna voce valida.
+pub fn leggi_listino(
+    byte: &[u8],
+    nome_file: Option<&str>,
+) -> Result<(Prezzario, RapportoImportazione), ErroreApplicazione> {
+    let r = opencomputo_format_listino::importa(
+        byte,
+        &mut GeneratoreSequenziale::default(),
+        &opencomputo_format_listino::OpzioniListino {
+            nome_file: nome_file.map(str::to_owned),
+            ..Default::default()
+        },
+    )
+    .map_err(errore_import)?;
+    let formato = match r.rapporto.formato {
+        opencomputo_format_listino::FormatoListino::Csv => "csv",
+        opencomputo_format_listino::FormatoListino::Json => "json",
+    };
+    let rapporto = RapportoImportazione {
+        formato: formato.into(),
+        voci_elenco: r.rapporto.voci_importate,
+        voci_computo: 0,
+        anomalie: r.rapporto.anomalie,
+    };
+    Ok((r.prezzario, rapporto))
+}
+
+/// Prezzario di consultazione da un file DCF (solo contenuti non protetti), XPWE, di
+/// progetto o da un listino CSV o JSON, riconosciuto dal contenuto: DCF dalla firma,
+/// poi file di progetto, poi XPWE se il testo inizia con `<`, altrimenti listino.
 ///
 /// # Errors
 /// Formato non riconosciuto o file non leggibile.
@@ -114,6 +152,9 @@ pub fn leggi_prezzario(
             anomalie: Vec::new(),
         };
         return Ok((p.elenco_prezzi, r));
+    }
+    if !sembra_xml(byte) {
+        return leggi_listino(byte, nome_file);
     }
     let (s, r) = importa_xpwe(byte, nome_file)?;
     Ok((s.progetto().elenco_prezzi.clone(), r))

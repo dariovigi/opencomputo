@@ -29,6 +29,17 @@ Prima versione: tutte le fasi di sviluppo 1–6. Dettagli in `docs/STATO.md`.
 
 ### Aggiunto
 
+* **Assistente AI, parti locali** (ADR 0025; nessuna chiamata ai provider in questa
+  fase):
+  * listini prezzi **CSV e JSON** (crate `opencomputo-format-listino`): colonne
+    riconosciute dall'intestazione, separatori riconosciuti dal contenuto, righe scartate
+    e duplicati segnalati con il numero di riga, capitoli dal codice; caricabili come
+    prezzari di consultazione come i DCF non protetti e gli XPWE;
+  * crate `opencomputo-assistente`: ricerca testuale nei prezzari (BM25 deterministico,
+    radici dell'italiano, termini simili), candidati con handle per il modello, schemi
+    JSON delle risposte per il tool use con `strict: true`, catalogo chiuso di forme di
+    rigo, controllo dei valori dichiarati dall'utente, validazione delle risposte con
+    codici stabili e traduzione in comandi provati nella sessione.
 * **Cronoprogramma dei lavori** sulla WBS (ADR 0024, schema 7):
   * durate in giorni lavorativi e legami FI, II, FF, IF con ritardo o anticipo,
     vincolo «inizio non prima del», avanzamento, note;

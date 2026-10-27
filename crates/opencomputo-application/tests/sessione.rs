@@ -1831,3 +1831,39 @@ fn cronoprogramma_con_i_comandi() {
     let x = casi_uso::esporta_xpwe(s.progetto(), None).unwrap();
     assert!(!x.xml.contains("Fine dei lavori"));
 }
+
+#[test]
+fn copia_da_un_listino_csv_e_json() {
+    let csv = include_bytes!("../../opencomputo-format-listino/tests/fixtures/listino_esempio.csv");
+    let (prezzario, rapporto) = casi_uso::leggi_prezzario(csv, Some("listino.csv")).unwrap();
+    assert_eq!(rapporto.formato, "csv");
+    assert_eq!(rapporto.voci_elenco, 7);
+    assert_eq!(
+        rapporto
+            .anomalie
+            .iter()
+            .filter(|a| a.gravita == opencomputo_core::validazione::Gravita::Errore)
+            .count(),
+        5
+    );
+    let mut s = Sessione::nuovo("Prova");
+    s.carica_prezzario("listino", prezzario);
+    s.esegui(&comandi(
+        r#"[{"comando": "copia_da_prezzario", "prezzario": "listino", "codici": ["M.01.01"]},
+            {"comando": "aggiungi_voce_computo", "codice": "M.01.01", "righi": [{"lunghezza": 10, "altezza_peso": "3"}]}]"#,
+    ))
+    .unwrap();
+    // 10 × 3 = 30 m² × 1.234,56 = 37.036,80 €
+    assert_eq!(totale(&s), Importo::new(dec!(37036.80)));
+
+    let json =
+        include_bytes!("../../opencomputo-format-listino/tests/fixtures/listino_esempio.json");
+    let (prezzario, rapporto) = casi_uso::leggi_prezzario(json, Some("listino.json")).unwrap();
+    assert_eq!(rapporto.formato, "json");
+    assert_eq!(prezzario.voci.len(), 4);
+    assert_eq!(prezzario.nome, "Listino di prova");
+
+    let e = casi_uso::leggi_prezzario(b"Codice;Prezzo\nA;1\n", Some("x.csv")).unwrap_err();
+    assert!(matches!(e, ErroreApplicazione::Importazione { .. }));
+    assert!(e.to_string().contains("colonne obbligatorie mancanti"));
+}

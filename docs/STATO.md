@@ -1,6 +1,8 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-10-22. Ultimo lavoro, sul ramo `cronoprogramma`: il
+Ultimo aggiornamento: 2026-10-27. Ultimo lavoro, sul ramo `assistente`: la **fase 2
+dell'assistente AI** (listini CSV e JSON, ricerca nei prezzari, validazione delle risposte
+del modello e traduzione in comandi; ADR 0025), dopo il
 **cronoprogramma dei lavori** con editor in stile project management e diagramma di
 Gantt (ADR 0024, schema 7), dopo il **modello tradizionale per tutti i
 documenti** (ADR 0023), dopo l'**aggiornamento da listino** (confronto
@@ -20,6 +22,75 @@ Restano aperti:
 * il trascinamento tra finestre sui sistemi reali (WebView2, WKWebView, WebKitGTK);
 * il confronto con documenti PriMus reali (serve un export XPWE con voci);
 * la prova su macOS e Windows.
+
+## Assistente AI, fase 2: parti locali
+
+Chiesto dal titolare il 2026-10-27: un assistente che proponga il computo da una
+descrizione in linguaggio naturale e da un prezzario importato. Fase 1 (analisi e
+progetto) approvata lo stesso giorno, con la richiesta di importare prezzari anche in DCF.
+Decisioni in [ADR 0025](adr/0025-assistente-ai.md). **Nessuna chiamata AI in questa
+fase**: i provider (OpenAI per gli embedding, Anthropic per la generazione), il
+portachiavi e il consenso all'invio dei dati arrivano nella fase 3; l'interfaccia nella
+fase 4.
+
+### Cosa è cambiato
+
+* **Nuovo crate `opencomputo-format-listino`**: listini CSV e JSON → `Prezzario`.
+  * colonne riconosciute da nomi alternativi configurabili; separatore di campo e
+    decimale riconosciuti dal contenuto; UTF-8 o Windows-1252;
+  * righe scartate (codice, descrizione o unità vuoti; prezzo non valido o negativo;
+    codice duplicato; campi in eccesso) segnalate con il numero di riga; prezzo zero,
+    incidenze fuori da 0–100 e natura sconosciuta solo segnalati;
+  * capitoli figli dal prefisso del codice; colonne non riconosciute nei dati originali
+    della voce; impronta SHA-256 nella provenienza.
+* **application**: `casi_uso::leggi_listino`; `leggi_prezzario` riconosce anche CSV e
+  JSON (dopo DCF, file di progetto e XPWE). Ne beneficiano `carica_prezzario`, `cerca
+  --prezzario` ed `esegui --prezzario`. I DCF passano dal parser esistente, con le regole
+  dell'ADR 0006.
+* **Nuovo crate `opencomputo-assistente`**:
+  * ricerca testuale BM25 in interi a virgola fissa, con radici leggere dell'italiano,
+    capitoli antenati nel testo delle voci, termini simili per trigrammi, filtri per
+    dimensione dell'unità, capitolo e natura;
+  * candidati con handle validi per una richiesta; il modello non vede codici né prezzi;
+  * schemi JSON delle due risposte del modello (analisi e selezione) per il tool use con
+    `strict: true`, senza campi facoltativi né unioni;
+  * catalogo chiuso di 13 forme di rigo tradotte nei righi di misura del core, con
+    conversione delle unità (cm, mm → m; kg → t con la formula del rigo);
+  * estrazione dei valori numerici della richiesta: un valore che il modello dichiara
+    dell'utente ma che non compare diventa un'ipotesi;
+  * validazione della risposta con 15 codici di controllo (tabella nel modulo
+    `proposta`), esito deciso da Rust, comandi `copia_da_prezzario` e
+    `aggiungi_voce_computo` con la lavorazione, la motivazione e le ipotesi nelle note;
+  * prova dei comandi nella `Sessione`.
+* **CLI**: testo d'aiuto di `cerca --prezzario` aggiornato.
+
+### Verifica (Rust 1.97.0, Linux)
+
+* I test usano solo fixture sintetiche e risposte del modello scritte a mano: nessuna
+  chiamata AI.
+* Nuovi test:
+  * listini: 16 test di unità, 9 d'integrazione e un esempio nella documentazione con risultati attesi riga per riga
+    (CSV con 12 righe di dati, 7 importate, 5 scartate; JSON con 8 voci, 4 importate);
+  * assistente: 16 test di unità, 14 d'integrazione: 13 domande di ricerca con la voce
+    attesa al primo posto (anche con errori di battitura), un bagno completo dalla
+    risposta al computo (1.745,82 € calcolati a mano, poi esecuzione e annullamento),
+    travi in tonnellate e pali cilindrici (7.994,90 €), una tabella di 15 risposte
+    sbagliate con il codice atteso, duplicati, alternative, complementari, prezzo
+    dell'elenco diverso, nessuna ipotesi orfana da una lavorazione esclusa;
+  * application e servizio: caricamento di listini CSV e JSON.
+* `cargo test --workspace --exclude opencomputo-gui`: 338 test passati, 0 falliti, 9
+  ignorati (prima della fase: 280, 0, 9). `cargo clippy … -- -D warnings`, `cargo fmt
+  --check` e `cargo doc` dei due crate nuovi: puliti.
+* Il crate grafico non è stato compilato (nessuna modifica; su Linux richiede WebKitGTK).
+* Non verificato: compilazione e test su macOS e Windows; l'interfaccia (nessuna
+  modifica); qualità della ricerca su un prezzario reale.
+
+### Aperti
+
+* Formato reale del prezzario regionale che si userà: il lettore è configurabile, ma
+  le soglie della ricerca vanno ricalibrate sui dati veri.
+* La finestra *Carica prezzario…* non mostra ancora i file `.csv` (fase 4).
+* Compatibilità XPWE: invariata, export sperimentale (ADR 0006).
 
 ## Cronoprogramma dei lavori
 

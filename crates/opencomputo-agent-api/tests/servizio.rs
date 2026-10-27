@@ -237,6 +237,28 @@ fn prezzario_di_consultazione_e_ricerca() {
 }
 
 #[test]
+fn listino_csv_di_consultazione() {
+    let mut s = Servizio::new();
+    chiedi(&mut s, json!({"richiesta": "nuovo", "titolo": "Prova"}));
+    let csv = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../opencomputo-format-listino/tests/fixtures/listino_esempio.csv"
+    );
+    let r = chiedi(
+        &mut s,
+        json!({"richiesta": "carica_prezzario", "nome": "listino", "percorso": csv}),
+    );
+    assert_eq!(r["formato"], "csv");
+    assert_eq!(r["voci"], 7);
+    let c = chiedi(
+        &mut s,
+        json!({"richiesta": "cerca", "testo": "muratura", "prezzario": "listino"}),
+    );
+    assert_eq!(c["trovate"], 1);
+    assert_eq!(c["voci"][0]["codice"], "M.01.01");
+}
+
+#[test]
 fn ciclo_su_flussi() {
     let mut s = Servizio::new();
     let ingresso =
