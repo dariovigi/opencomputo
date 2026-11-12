@@ -260,3 +260,55 @@ fn anagrafica_con_nomi_diversi_e_sezioni_note_non_confuse() {
         .xml;
     assert_eq!(secondo, xml);
 }
+
+/// Fatto osservato in un export reale con voci: la `Quantita` di ogni rigo ripete il
+/// totale della voce. Non è un'anomalia; un totale di voce sbagliato lo resta.
+#[test]
+fn quantita_del_rigo_che_ripete_il_totale_della_voce() {
+    let voce = |totale: &str, righi: &str| {
+        format!(
+            "<VCItem ID=\"1\"><IDEP>1</IDEP><Quantita>{totale}</Quantita><PweVCMisure>{righi}</PweVCMisure></VCItem>"
+        )
+    };
+    let righi = format!(
+        "{}{}",
+        rg("", "", "", "184.32", "303.60"),
+        rg("", "", "", "119.28", "303.60")
+    );
+    let r = prova(&documento(&ep("1", "A", "2"), &voce("303.6", &righi))).unwrap();
+    assert_eq!(
+        codici(&r),
+        Vec::<String>::new(),
+        "{:?}",
+        r.rapporto.anomalie
+    );
+    assert_eq!(
+        r.progetto.calcola_computo(r.computo).unwrap().totale,
+        Importo::new(dec!(607.20))
+    );
+    // Totale dichiarato diverso dalla somma dei righi: resta segnalato, una volta sola.
+    let r = prova(&documento(
+        &ep("1", "A", "2"),
+        &voce("999", &righi.replace("303.60", "999")),
+    ))
+    .unwrap();
+    assert_eq!(r.rapporto.con_codice("xpwe.quantita_diversa").count(), 1);
+    assert_eq!(
+        r.progetto.calcola_computo(r.computo).unwrap().totale,
+        Importo::new(dec!(607.20))
+    );
+}
+
+/// Un contenitore di analisi vuoto (`<PweEPAR />`) non è un'analisi da segnalare.
+#[test]
+fn analisi_vuota_non_segnalata() {
+    let voce = ep("1", "A", "2").replace(
+        "</EPItem>",
+        "<PweEPAnalisi><PweEPAR /></PweEPAnalisi></EPItem>",
+    );
+    let r = prova(&documento(&voce, "")).unwrap();
+    assert_eq!(
+        r.rapporto.con_codice("xpwe.analisi_non_importata").count(),
+        0
+    );
+}

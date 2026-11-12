@@ -1,6 +1,7 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-11-12. Ultimo lavoro, sul ramo `assistente`: **prestazioni e
+Ultimo aggiornamento: 2026-11-13. Ultimo lavoro, sul ramo `assistente`: finestra
+ridimensionabile e verifica su un XPWE reale con voci (sezione qui sotto), dopo **prestazioni e
 robustezza dell'assistente AI** (sezione qui sotto; ADR 0025, decisioni 34–40), dopo le **voci
 alternative** dell'assistente AI (opzioni in ordine di pertinenza da spuntare, misure
 modificabili; ADR 0025, decisioni 29–33), dopo la fase 4 (vista «Assistente AI»
@@ -22,6 +23,30 @@ un'altra voce del computo, statici nel libretto; schema 6), dopo le voci affianc
 computo (vista divisa con «>» e «<»), il trascinamento di voci tra finestre, l'export sperimentale
 dell'elenco prezzi in DCF, la stampa nel modello tradizionale e il completamento delle
 analisi prezzi.
+
+## Finestra ridimensionabile e verifica su un XPWE reale con voci (2026-11-13)
+
+Il titolare ha fornito un computo reale in XPWE (formato 5.01, sorgente dichiarata
+PriMus-DCF: 19 voci di elenco, 20 voci di computo, 28 righi, 13 analisi). Il file non è
+nel repository; i test usano dati sintetici con le stesse caratteristiche.
+
+* **Import verificato** con un calcolo indipendente dal file: 20 voci su 20 con codice,
+  quantità, prezzo e importo uguali; totale 19.379,95 € identico. Esportato in XPWE e
+  reimportato: stesse voci e stesso totale, analisi conservate.
+* **Fatti nuovi sul formato**: la `Quantita` di ogni `RGItem` ripete il totale della
+  voce; gli `ID` dei righi ripartono da 1 in ogni voce; le voci senza analisi hanno
+  `<PweEPAR />` vuoto; i componenti di analisi (`EPARItem`) hanno `Tipo`, `IDEP` (-2 per
+  un componente libero), `Descrizione`, `Misura`, `Qt` e `Prezzo` con la virgola
+  decimale; le percentuali di spese generali e utile non sono nel file.
+* **Corretto**: 11 falsi avvisi «quantità diversa» e 6 false segnalazioni di analisi.
+* **Non fatto**: le analisi dei prezzi non vengono importate come analisi di
+  OpenComputo (vale il prezzo dichiarato; i dati sono conservati e riesportati).
+  L'export scrive ancora nei righi la quantità del rigo e una numerazione unica.
+* **Interfaccia**: il file ha mostrato che un titolo lungo allargava la pagina oltre la
+  finestra (griglie con colonne `1fr`). Corretto, con `ui-tests/finestra.test.mjs`
+  (6 test a 1600, 1320, 1100, 960 e 640 px).
+
+Verifica: `cargo test --workspace` 416 test, `npm test` 53, tutti passati su Linux.
 
 ## Prestazioni e robustezza dell'assistente AI (2026-11-12)
 

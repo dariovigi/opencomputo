@@ -70,7 +70,9 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 
 /* ------------------------------------------------------------------ guscio */
 
-#app { display: grid; grid-template-rows: auto 1fr auto; height: 100vh; }
+/* Colonne con minimo zero: un titolo o una tabella larghi non allargano la pagina oltre
+   la finestra (con `1fr` il minimo sarebbe la larghezza del contenuto). */
+#app { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; height: 100vh; }
 .barra {
   display: flex; align-items: center; gap: 6px;
   padding: 6px 10px; background: var(--pannello); border-bottom: 1px solid var(--bordo);
@@ -84,8 +86,8 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 .modificato::after { content: " ●"; color: var(--avviso); }
 .separatore { width: 1px; align-self: stretch; background: var(--bordo); margin: 2px 4px; }
 
-.corpo { display: grid; grid-template-columns: 216px 1fr; min-height: 0; }
-.corpo.senza-navigazione, .corpo.vuoto { grid-template-columns: 1fr; }
+.corpo { display: grid; grid-template-columns: 216px minmax(0, 1fr); min-height: 0; }
+.corpo.senza-navigazione, .corpo.vuoto { grid-template-columns: minmax(0, 1fr); }
 .corpo.vuoto .navigazione { display: none; }
 .navigazione { background: var(--pannello-2); border-right: 1px solid var(--bordo); overflow-y: auto; padding: 8px 0; }
 .navigazione h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--testo-3); padding: 10px 14px 4px; }
@@ -119,11 +121,11 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 .vista-testata .spinge { margin-left: auto; }
 .vista-corpo { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
 .vista-corpo.pieno { padding: 0; overflow: hidden; display: flex; }
-.dividi { display: grid; grid-template-columns: 1fr 320px; flex: 1; min-height: 0; }
-.dividi.senza-dettaglio { grid-template-columns: 1fr; }
+.dividi { display: grid; grid-template-columns: minmax(0, 1fr) 320px; flex: 1; min-height: 0; }
+.dividi.senza-dettaglio { grid-template-columns: minmax(0, 1fr); }
 .dividi.senza-dettaglio > .dettaglio { display: none; }
 .dividi > * { min-height: 0; min-width: 0; }
-.dividi.verticale { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+.dividi.verticale { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
 .zona { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .dettaglio { border-left: 1px solid var(--bordo); background: var(--pannello); overflow-y: auto; padding: 14px 16px; }
 .dettaglio h3 { font-size: 13px; margin: 14px 0 6px; color: var(--testo-2); text-transform: uppercase; letter-spacing: .05em; }
@@ -189,14 +191,15 @@ table.semplice td.mono { font-family: var(--mono); font-size: 12px; }
 
 /* ------------------------------------------------------------------ griglia virtuale */
 
-.griglia { display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--pannello); }
+.griglia { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; background: var(--pannello); }
 .griglia-riga { display: grid; align-items: center; height: 28px; }
 .griglia-intestazione { background: var(--pannello-2); border-bottom: 1px solid var(--bordo); font-weight: 600; color: var(--testo-2); font-size: 12px; }
 .griglia-corpo { position: relative; flex: 1; overflow: auto; outline: none; }
 .griglia-corpo:focus-visible { box-shadow: inset 0 0 0 2px var(--selezione); }
 .griglia-spazio { width: 1px; }
 .griglia-visibili { position: absolute; top: 0; left: 0; right: 0; }
-.griglia-visibili .griglia-riga { position: absolute; left: 0; right: 0; border-bottom: 1px solid var(--pannello-2); cursor: default; }
+.griglia-intestazione { min-width: max-content; }
+.griglia-visibili .griglia-riga { position: absolute; left: 0; width: max(100%, var(--griglia-minima, 0px)); border-bottom: 1px solid var(--pannello-2); cursor: default; }
 .griglia-visibili .griglia-riga:hover { background: var(--pannello-2); }
 .griglia-visibili .griglia-riga.selezionata { background: var(--selezione); }
 .griglia-visibili .griglia-riga.attiva { box-shadow: inset 3px 0 0 var(--attiva); }
@@ -211,9 +214,9 @@ table.semplice td.mono { font-family: var(--mono); font-size: 12px; }
 
 .foglio { flex: 1; overflow: auto; background: var(--pannello); outline: none; min-height: 0; }
 .foglio-vuoto { padding: 40px; text-align: center; color: var(--testo-3); }
-table.misure { border-collapse: separate; border-spacing: 0; width: 100%; table-layout: fixed; min-width: 860px; }
+table.misure { border-collapse: separate; border-spacing: 0; width: 100%; table-layout: fixed; min-width: 920px; }
 table.misure col.c-num { width: 38px; }
-table.misure col.c-codice { width: 96px; }
+table.misure col.c-codice { width: 160px; }
 table.misure col.c-fatt { width: 66px; }
 table.misure col.c-formula { width: 86px; }
 table.misure col.c-q { width: 100px; }
@@ -682,3 +685,32 @@ table.crono-legami, table.crono-mesi { border-collapse: collapse; width: 100%; f
 .ai-totali-scelte { display: flex; gap: 14px; flex-wrap: wrap; }
 .assistente .mono { font-family: var(--mono); font-size: 12px; }
 .ai-barra-scelte .spinge { margin-left: auto; }
+
+/* ------------------------------------------------------------------ finestre strette */
+
+/* Sotto questa larghezza il pannello di dettaglio passa sotto la tabella invece che a
+   fianco: le colonne dei numeri restano visibili senza scorrere in orizzontale. */
+@media (max-width: 1450px) {
+  .dividi:not(.senza-dettaglio):not(.verticale) { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .dividi:not(.senza-dettaglio):not(.verticale) > .dettaglio { border-left: 0; border-top: 1px solid var(--bordo); max-height: 32vh; }
+}
+/* Colonne dei numeri più compatte e barra laterale più stretta. */
+@media (max-width: 1250px) {
+  .corpo { grid-template-columns: 184px minmax(0, 1fr); }
+  table.misure { min-width: 900px; }
+  table.misure td, table.misure th { padding-left: 5px; padding-right: 5px; }
+  table.misure col.c-num { width: 32px; }
+  table.misure col.c-codice { width: 140px; }
+  table.misure col.c-fatt { width: 62px; }
+  table.misure col.c-formula { width: 58px; }
+  table.misure col.c-q { width: 84px; }
+  table.misure col.c-prezzo { width: 74px; }
+  table.misure col.c-importo { width: 92px; }
+  table.misure td.c-codice { font-size: 11px; }
+  .con-filtri { grid-template-columns: 230px minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+  .corpo { grid-template-columns: 150px minmax(0, 1fr); }
+  .navigazione button { padding-left: 10px; padding-right: 8px; }
+  .con-filtri { grid-template-columns: 190px minmax(0, 1fr); }
+}

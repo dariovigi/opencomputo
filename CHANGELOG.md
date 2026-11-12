@@ -7,6 +7,21 @@ secondo il versionamento semantico.
 
 Prima versione: tutte le fasi di sviluppo 1–6. Dettagli in `docs/STATO.md`.
 
+### Corretto (finestra e XPWE, 2026-11-13)
+
+* Ridimensionamento della finestra: con un titolo dei lavori lungo la pagina diventava
+  più larga della finestra e le colonne di quantità, prezzo e importo non si vedevano,
+  a qualsiasi larghezza. Ora la pagina segue sempre la finestra.
+* Finestre strette: sotto 1450 px il pannello di dettaglio passa sotto la tabella; sotto
+  1250 px colonne dei numeri e barra laterale più compatte; nelle griglie (elenco
+  prezzi, aggiornamento da listino) le colonne che non entrano si raggiungono scorrendo,
+  con l'intestazione allineata.
+* Colonna «Tariffa» più larga: i codici dei prezzari regionali si leggono per intero.
+* Percentuali con molte cifre (incidenze lette da un XPWE) mostrate con due decimali.
+* Import XPWE: niente più avvisi «quantità diversa» quando la `Quantita` dei righi
+  ripete il totale della voce (osservato in un export reale); un contenitore di analisi
+  vuoto non è più segnalato come analisi non importata.
+
 ### Prestazioni e robustezza dell'assistente AI (2026-11-12)
 
 Misure su un listino di 30.000 voci con vettori di 1536 dimensioni (Linux, `--release`,

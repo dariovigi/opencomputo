@@ -12,8 +12,8 @@ export const titolo = 'Elenco prezzi';
 const locale = { scheda: 'progetto', testo: '', prezzario: null, codice: null };
 
 const COLONNE = [
-  { titolo: 'Tariffa', larghezza: '140px', valore: (v) => v.codice, classe: () => 'mono' },
-  { titolo: 'Descrizione', larghezza: 'minmax(240px, 1fr)', valore: (v) => v.descrizione_breve, suggerimento: true },
+  { titolo: 'Tariffa', larghezza: '160px', valore: (v) => v.codice, classe: () => 'mono' },
+  { titolo: 'Descrizione', larghezza: 'minmax(200px, 1fr)', valore: (v) => v.descrizione_breve, suggerimento: true },
   { titolo: 'U.M.', larghezza: '64px', allinea: 'centro', valore: (v) => v.unita_misura },
   { titolo: 'Prezzo €', larghezza: '100px', allinea: 'destra', valore: (v) => numero(v.prezzo, 2) },
   { titolo: 'M.O.', larghezza: '76px', allinea: 'destra', valore: (v) => percento(v.incidenza_manodopera) },

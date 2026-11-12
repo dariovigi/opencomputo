@@ -81,7 +81,22 @@ export function euro(valore) {
 
 /** Percentuale: `12.5` → `12,50 %`. */
 export function percento(valore) {
-  return valore === null || valore === undefined ? '' : numero(valore, 2) + ' %';
+  return valore === null || valore === undefined ? '' : numero(arrotonda(valore, 2), 2) + ' %';
+}
+
+/**
+ * Arrotonda una stringa decimale a `decimali` cifre (metà lontano da zero), con interi
+ * esatti: solo per mostrare percentuali che arrivano con molte cifre (es. da un XPWE).
+ * Gli importi non passano di qui: arrivano già arrotondati dal motore.
+ */
+export function arrotonda(valore, decimali) {
+  const m = /^(-?)(\d*)(?:\.(\d*))?$/.exec(String(valore).trim());
+  if (!m || (m[3] ?? '').length <= decimali) return String(valore).trim();
+  const [, segno, intera, frazione] = m;
+  let n = BigInt((intera || '0') + frazione.slice(0, decimali));
+  if (frazione[decimali] >= '5') n += 1n;
+  const cifre = n.toString().padStart(decimali + 1, '0');
+  return segno + cifre.slice(0, cifre.length - decimali) + (decimali ? '.' + cifre.slice(-decimali) : '');
 }
 
 /** Data ISO → gg/mm/aaaa. */

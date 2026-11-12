@@ -1217,8 +1217,9 @@ fn importa_voce_elenco<G: GeneratoreId>(
     } else {
         NaturaVoce::Lavoro
     };
+    // Un contenitore senza componenti (`<PweEPAR />`) non è un'analisi.
     if let Some(a) = item.figlio(st::EP_ANALISI)
-        && !a.figli.is_empty()
+        && a.figli.iter().any(|f| !f.figli.is_empty())
     {
         cx.aggregata(
             Gravita::Informazione,
@@ -1408,6 +1409,9 @@ fn importa_voce_computo<G: GeneratoreId>(
         let p_m = format!("{percorso}/{}", m.nome);
         let esito = conservati::registra_contenitore(&mut dati, "misure/", m, st::RG_ITEM);
         cx.sconosciuti(esito, &format!("{p_vc}/{}/{}", st::VC_ITEM, m.nome));
+        let totale_voce = testo::decimale(testo_campo(item, "Quantita"))
+            .ok()
+            .flatten();
         for (i, rg) in m.figli_con_nome(st::RG_ITEM).enumerate() {
             let rigo = importa_rigo(
                 cx,
@@ -1415,6 +1419,7 @@ fn importa_voce_computo<G: GeneratoreId>(
                 &format!("{p_m}/{}[{}]", st::RG_ITEM, i + 1),
                 &progetto.regole,
                 &mut dati,
+                totale_voce,
             );
             voce.righi.push(rigo);
             cx.statistiche.righi += 1;
@@ -1491,6 +1496,7 @@ fn importa_rigo<G: GeneratoreId>(
     percorso: &str,
     regole: &RegoleArrotondamento,
     dati_voce: &mut Dati,
+    totale_voce: Option<Decimal>,
 ) -> RigoMisura {
     let id: RigoMisuraId = cx.generatore.nuovo();
     let prefisso = format!("rigo:{id}/");
@@ -1643,7 +1649,17 @@ fn importa_rigo<G: GeneratoreId>(
     if let Some(q) = dichiarata
         && let Ok(Some(r)) = rigo.calcola(regole)
     {
-        if regole.arrotonda_quantita(q) != regole.arrotonda_quantita(r.valore_esatto) {
+        let diversa = regole.arrotonda_quantita(q) != regole.arrotonda_quantita(r.valore_esatto);
+        // Fatto osservato in un export reale (PriMus-DCF, formato 5.01): la `Quantita` di
+        // ogni rigo ripete il totale della voce, non la quantità del rigo. In quel caso
+        // non c'è nulla da confrontare rigo per rigo: vale il controllo sul totale.
+        if diversa
+            && totale_voce
+                .is_some_and(|t| regole.arrotonda_quantita(t) == regole.arrotonda_quantita(q))
+        {
+            return rigo;
+        }
+        if diversa {
             // Interpretazione alternativa: valori zero come campi vuoti.
             let senza_zeri = fattori.clone().map(|f| match f {
                 Some(Fattore::Valore(v)) if v.is_zero() => None,

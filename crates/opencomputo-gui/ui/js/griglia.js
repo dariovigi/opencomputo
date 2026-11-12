@@ -29,7 +29,7 @@ export function griglia(opzioni) {
   let ancora = -1;
 
   const spunte = opzioni.spunte;
-  const modello = [spunte && '32px', ...colonne.map((c) => c.larghezza || '1fr')].filter(Boolean).join(' ');
+  const modello = [spunte && '32px', ...colonne.map((c) => (!c.larghezza || c.larghezza === '1fr' ? 'minmax(90px, 1fr)' : c.larghezza))].filter(Boolean).join(' ');
   const intestazione = h('div', { class: 'griglia-riga griglia-intestazione', role: 'row', style: { gridTemplateColumns: modello } },
     spunte && h('div', { class: 'cella centro', role: 'columnheader', 'aria-label': spunte.etichetta ?? 'Scelta' }, '✓'),
     colonne.map((c) => h('div', { class: ['cella', c.allinea], role: 'columnheader' }, c.titolo)));
@@ -41,9 +41,18 @@ export function griglia(opzioni) {
   const el = h('div', { class: 'griglia' }, intestazione, corpo);
 
   let richiesto = false;
+  let minima = 0;
   function disegna() {
     richiesto = false;
     spazio.style.height = righe.length * ALTEZZA + 'px';
+    // Finestra più stretta delle colonne: le righe prendono la larghezza
+    // dell'intestazione (che non scende sotto il suo minimo) e si scorre in orizzontale.
+    const larga = intestazione.offsetWidth > corpo.clientWidth + 20 ? intestazione.offsetWidth : 0;
+    if (larga !== minima) {
+      minima = larga;
+      spazio.style.width = larga ? larga + 'px' : '';
+      corpo.style.setProperty('--griglia-minima', larga + 'px');
+    }
     messaggio.textContent = righe.length ? '' : vuoto;
     const alto = corpo.scrollTop;
     const altezza = corpo.clientHeight || 400;
@@ -74,7 +83,16 @@ export function griglia(opzioni) {
   function ridisegna() {
     if (!richiesto) { richiesto = true; requestAnimationFrame(disegna); }
   }
-  corpo.addEventListener('scroll', ridisegna);
+  // L'intestazione segue lo scorrimento orizzontale delle righe: in una finestra stretta
+  // le colonne si raggiungono scorrendo e i titoli restano allineati.
+  let sinistra = 0;
+  corpo.addEventListener('scroll', () => {
+    if (corpo.scrollLeft !== sinistra) {
+      sinistra = corpo.scrollLeft;
+      intestazione.style.transform = sinistra ? `translateX(${-sinistra}px)` : '';
+    }
+    ridisegna();
+  });
   new ResizeObserver(ridisegna).observe(corpo);
 
   function scegli(i, { estendi = false, aggiungiA = false } = {}) {
