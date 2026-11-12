@@ -831,6 +831,9 @@ fn costruisci<G: GeneratoreId>(
         FormatoListino::Csv => FormatoOrigine::Csv,
         FormatoListino::Json => FormatoOrigine::Altro("json".into()),
     };
+    let mut codici_inseriti: std::collections::HashSet<String> =
+        std::collections::HashSet::with_capacity(accettate.len());
+    prezzario.voci.reserve(accettate.len());
     for Accettata {
         grezza: v,
         prezzo,
@@ -862,12 +865,16 @@ fn costruisci<G: GeneratoreId>(
         prov.identificativo_originale = Some(v.posizione.clone());
         prov.dati_originali = v.altri.clone();
         voce.provenienza = Some(prov);
-        // Codice univoco già verificato e capitolo esistente.
-        if let Err(e) = prezzario.aggiungi_voce(voce) {
+        // Identificativo nuovo, capitolo appena creato; il codice si ricontrolla qui con un
+        // insieme: `Prezzario::aggiungi_voce` scorre tutte le voci a ogni inserimento, e
+        // su un listino di decine di migliaia di voci impiega secondi.
+        if codici_inseriti.insert(voce.codice.clone()) {
+            prezzario.voci.push(voce);
+        } else {
             anomalie.push(anomalia(
                 Gravita::Errore,
                 "voce_rifiutata",
-                e.to_string(),
+                format!("codice «{}» già presente", voce.codice),
                 &v.posizione,
             ));
             scartate += 1;

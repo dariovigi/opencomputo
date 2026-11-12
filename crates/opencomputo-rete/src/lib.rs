@@ -17,7 +17,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use opencomputo_assistente::provider::chiavi::{ArchivioChiavi, ErroreChiavi};
 use opencomputo_assistente::provider::{
-    Attesa, ErroreTrasporto, Provider, RichiestaHttp, RispostaHttp, Segreto, Trasporto,
+    Annullamento, Attesa, ErroreTrasporto, Provider, RichiestaHttp, RispostaHttp, Segreto,
+    Trasporto,
 };
 
 /// Dimensione massima di una risposta letta, in byte.
@@ -61,14 +62,50 @@ fn errore_reqwest(e: &reqwest::Error) -> ErroreTrasporto {
     // Il messaggio di reqwest può contenere l'URL, mai le intestazioni.
     if e.is_timeout() {
         ErroreTrasporto::Timeout
-    } else if e.is_connect() || e.is_request() || e.is_body() {
+    } else if e.is_connect() || e.is_request() || e.is_body() || e.is_decode() {
+        // `is_decode`: corpo interrotto a metà (connessione caduta durante la risposta).
         ErroreTrasporto::Connessione(e.to_string())
     } else {
         ErroreTrasporto::Altro(e.to_string())
     }
 }
 
+/// Ogni quanto si controlla l'annullamento durante un'attesa.
+const PASSO_ANNULLAMENTO: Duration = Duration::from_millis(100);
+
 impl Trasporto for TrasportoHttps {
+    /// La richiesta parte in un thread a parte; se viene chiesto l'annullamento si smette
+    /// di aspettarla (il thread finisce da solo alla risposta o al tempo massimo) e
+    /// l'interfaccia torna subito disponibile.
+    fn invia_annullabile(
+        &self,
+        richiesta: &RichiestaHttp,
+        annullamento: &Annullamento,
+    ) -> Result<RispostaHttp, ErroreTrasporto> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (questo, richiesta) = (self.clone(), richiesta.clone());
+        std::thread::Builder::new()
+            .name("opencomputo-http".into())
+            .spawn(move || {
+                // Se nessuno aspetta più, l'invio fallisce: va bene così.
+                let _ = tx.send(questo.invia(&richiesta));
+            })
+            .map_err(|e| ErroreTrasporto::Altro(format!("thread non avviato: {e}")))?;
+        loop {
+            match rx.recv_timeout(PASSO_ANNULLAMENTO) {
+                Ok(r) => return r,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    if annullamento.annullato() {
+                        return Err(ErroreTrasporto::Altro("annullato".into()));
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(ErroreTrasporto::Altro("richiesta interrotta".into()));
+                }
+            }
+        }
+    }
+
     fn invia(&self, richiesta: &RichiestaHttp) -> Result<RispostaHttp, ErroreTrasporto> {
         let mut b = self
             .client
@@ -106,6 +143,17 @@ pub struct AttesaReale;
 impl Attesa for AttesaReale {
     fn attendi(&self, durata: Duration) {
         std::thread::sleep(durata);
+    }
+
+    fn attendi_annullabile(&self, durata: Duration, annullamento: &Annullamento) {
+        let fine = std::time::Instant::now() + durata;
+        while !annullamento.annullato() {
+            let resto = fine.saturating_duration_since(std::time::Instant::now());
+            if resto.is_zero() {
+                break;
+            }
+            std::thread::sleep(resto.min(PASSO_ANNULLAMENTO));
+        }
     }
 
     fn variazione_ms(&self, massimo: u64) -> u64 {

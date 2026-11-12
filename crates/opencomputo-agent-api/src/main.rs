@@ -823,7 +823,7 @@ fn main() -> ExitCode {
                 return ExitCode::from(uscita::FILE);
             }
         }
-        return match s.servi(io::stdin().lock(), io::stdout().lock()) {
+        return match s.servi(io::BufReader::new(io::stdin()), io::stdout().lock()) {
             Ok(()) => ExitCode::from(uscita::OK),
             Err(e) => {
                 eprintln!("opencomputo servizio: {e}");

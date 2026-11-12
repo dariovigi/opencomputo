@@ -115,6 +115,7 @@ function ridisegna() {
         h('span', null, h('strong', null, 'I dati inviati escono dal computer. '),
           'La richiesta e le descrizioni delle voci candidate vanno ad Anthropic; il testo delle voci dei prezzari e delle ricerche va a OpenAI. Prezzi e importi non vengono inviati.'),
         locale.scheda !== 'impostazioni' && h('button', { class: 'link', onclick: () => { locale.scheda = 'impostazioni'; ridisegna(); } }, 'Dettagli')),
+      locale.ai.avviso && h('div', { class: 'banner avviso ai-avviso-config', role: 'alert' }, `Impostazioni dell'assistente ripristinate: ${locale.ai.avviso}.`),
       corpo));
   aggiornaValori();
   aggiornaOrologio();
@@ -174,11 +175,15 @@ function puoProporre() {
 
 async function proponi() {
   if (!puoProporre()) { aggiornaPulsanti(); return; }
+  // Se la nuova richiesta fallisce o viene annullata torna la proposta precedente, che
+  // nel motore è ancora quella valida.
+  const precedente = locale.risultato;
   locale.risultato = null;
   const r = await lavora({ tipo: 'proponi', prezzario: locale.prezzario }, {
     richiesta: 'assistente_proponi', prezzario: locale.prezzario, testo: locale.testo.trim(), computo: locale.computo,
   });
   if (r) nuovaProposta(r);
+  else locale.risultato = precedente;
   ridisegna();
 }
 

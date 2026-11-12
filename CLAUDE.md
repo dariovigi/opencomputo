@@ -32,6 +32,10 @@
   dell'interfaccia va provata con `npm test` in `ui-tests` (dopo
   `cargo build -p opencomputo-agent-api --features banco-di-prova`: i test dell'assistente
   usano un provider finto locale e chiavi in memoria; la feature non va mai nei pacchetti).
+  Su Linux `npm run vera` prova il binario Tauri vero con `tauri-driver` e `xvfb`
+  (`cargo build -p opencomputo-gui --features opencomputo-agent-api/banco-di-prova`).
+  Il comando `richiesta` gira sempre in `spawn_blocking`: niente codice bloccante nei
+  comandi asincroni.
 * Ogni modifica al progetto passa da `opencomputo-application` (`Comando`, `Sessione`):
   GUI e CLI non scrivono il modello né chiamano i formati direttamente (ADR 0008).
   Aggiungendo una variante a `Comando` aggiornare gli esempi in

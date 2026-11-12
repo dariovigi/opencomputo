@@ -4,7 +4,7 @@
 // I test vedono quindi gli stessi totali, errori e file dell'applicazione desktop.
 
 import { createServer } from 'node:http';
-import { readFile, mkdtemp } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
@@ -57,12 +57,9 @@ function motore({ ambiente = {}, suAvanzamento = () => {} } = {}) {
     if (l.startsWith('{"avanzamento"')) { suAvanzamento(JSON.parse(l)); return; }
     attese.shift()?.(l);
   });
-  let coda = Promise.resolve();
-  const invia = (json) => {
-    const r = coda.then(() => new Promise((ok) => { attese.push(ok); p.stdin.write(json.replace(/\n/g, ' ') + '\n'); }));
-    coda = r.catch(() => {});
-    return r;
-  };
+  // Le righe partono subito e le risposte tornano nell'ordine delle richieste: così un
+  // `assistente_annulla` raggiunge il motore mentre un lavoro lungo è in corso.
+  const invia = (json) => new Promise((ok) => { attese.push(ok); p.stdin.write(json.replace(/\n/g, ' ') + '\n'); });
   return { invia, chiudi: () => p.kill() };
 }
 
@@ -98,10 +95,12 @@ const SIMULAZIONE = () => {
 };
 
 /** Apre il banco: {pagina, cartella (temporanea), errori (console e pagina), chiudi()}. */
-export async function apriBanco({ larghezza = 1600, altezza = 900, provider = null } = {}) {
+export async function apriBanco({ larghezza = 1600, altezza = 900, provider = null, configurazione = null } = {}) {
   const s = await server();
   const config = await mkdtemp(path.join(tmpdir(), 'opencomputo-config-'));
   const ambiente = { OPENCOMPUTO_CONFIG: config };
+  // File di configurazione dell'assistente già presente all'avvio (anche danneggiato).
+  if (configurazione !== null) await writeFile(path.join(config, 'assistente.json'), configurazione);
   if (provider) ambiente.OPENCOMPUTO_PROVIDER_DI_PROVA = provider;
   let avanzamento = () => {};
   const m = motore({ ambiente, suAvanzamento: (v) => avanzamento(v) });

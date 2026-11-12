@@ -7,6 +7,36 @@ secondo il versionamento semantico.
 
 Prima versione: tutte le fasi di sviluppo 1–6. Dettagli in `docs/STATO.md`.
 
+### Prestazioni e robustezza dell'assistente AI (2026-11-12)
+
+Misure su un listino di 30.000 voci con vettori di 1536 dimensioni (Linux, `--release`,
+`cargo run --release -p opencomputo-agent-api --example misura_assistente`).
+
+* Caricamento di un listino CSV: da 6,2 s a 0,1 s (il controllo dei codici doppi era
+  quadratico).
+* Ricerca per parole: prima ricerca da 0,97 s a 0,30 s, le successive da 88 a 18 ms;
+  ricerca ibrida da 190 a 86 ms; proposta (escluso il modello) da 212 a 101 ms.
+* Indicizzazione senza voci nuove: da 645 a 31 ms, senza riscrivere la cache.
+* Memoria massima da 537 a 358 MB: la cache dei vettori si legge e si scrive a flusso.
+* **Annulla** interrompe subito anche una richiesta già partita e le attese tra i
+  tentativi (prima aspettava la risposta del provider o la fine dell'attesa), e ferma
+  tutti i lavori in corso, non solo l'ultimo.
+* Indicizzazione, ricerca e proposta sullo stesso prezzario non si bloccano più a
+  vicenda; una seconda indicizzazione dello stesso prezzario è rifiutata
+  (`indicizzazione_in_corso`).
+* Un file `assistente.json` danneggiato non blocca più l'assistente: viene rinominato
+  in `assistente.json.danneggiato`, tornano i valori predefiniti, il consenso va ridato
+  e la vista lo segnala.
+* Una risposta del provider interrotta a metà viene ritentata come un errore di rete.
+* Servizio a righe JSON: `assistente_annulla` ha effetto anche mentre un lavoro è in
+  corso (le risposte restano nell'ordine delle richieste).
+* Richiesta all'assistente: al massimo 20.000 caratteri (`richiesta_troppo_lunga`).
+* Interfaccia: se una nuova richiesta fallisce o viene annullata resta visibile la
+  proposta precedente.
+* Applicazione: tutte le richieste girano su thread per operazioni bloccanti. Nelle
+  build di sviluppo (non `--release`) la prima richiesta all'assistente faceva fallire
+  il comando; trovato provando il programma vero con `tauri-driver`.
+
 ### Corretto (interfaccia)
 
 * Barra laterale: le voci dei computi avevano un rientro e un carattere più piccolo

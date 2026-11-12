@@ -139,6 +139,20 @@ pub trait Trasporto: Send + Sync {
     /// # Errors
     /// Errore di rete prima di una risposta.
     fn invia(&self, richiesta: &RichiestaHttp) -> Result<RispostaHttp, ErroreTrasporto>;
+
+    /// Come [`Trasporto::invia`], ma può smettere di aspettare la risposta quando viene
+    /// chiesto l'annullamento (una risposta del modello può richiedere minuti). La
+    /// versione predefinita aspetta comunque la risposta.
+    ///
+    /// # Errors
+    /// Errore di rete prima di una risposta, o attesa abbandonata per l'annullamento.
+    fn invia_annullabile(
+        &self,
+        richiesta: &RichiestaHttp,
+        _annullamento: &Annullamento,
+    ) -> Result<RispostaHttp, ErroreTrasporto> {
+        self.invia(richiesta)
+    }
 }
 
 /// Attesa tra un tentativo e il successivo (sostituibile nei test).
@@ -147,6 +161,11 @@ pub trait Attesa: Send + Sync {
     fn attendi(&self, durata: Duration);
     /// Variazione casuale da 0 a `massimo` millisecondi.
     fn variazione_ms(&self, massimo: u64) -> u64;
+    /// Attende la durata indicata, o meno se viene chiesto l'annullamento. La versione
+    /// predefinita attende tutta la durata.
+    fn attendi_annullabile(&self, durata: Duration, _annullamento: &Annullamento) {
+        self.attendi(durata);
+    }
 }
 
 /// Segnale di annullamento delle operazioni lunghe, controllato tra un passo e l'altro.

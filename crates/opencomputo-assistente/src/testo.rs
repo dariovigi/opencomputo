@@ -18,6 +18,10 @@ const PAROLE_VUOTE: &[&str] = &[
 
 /// Carattere normalizzato: minuscolo, senza accento; `None` per i separatori.
 fn normale(c: char) -> Option<char> {
+    // Quasi tutto il testo è ASCII: strada breve senza tabelle Unicode.
+    if c.is_ascii() {
+        return c.is_ascii_alphanumeric().then(|| c.to_ascii_lowercase());
+    }
     let c = c.to_lowercase().next().unwrap_or(c);
     Some(match c {
         'à' | 'á' | 'â' | 'ä' => 'a',
@@ -71,11 +75,19 @@ pub fn radice(parola: &str) -> String {
 /// lettera, ridotte alla radice.
 #[must_use]
 pub fn termini(testo: &str) -> Vec<String> {
-    parole(testo)
-        .into_iter()
-        .filter(|p| p.chars().count() > 1 && !PAROLE_VUOTE.contains(&p.as_str()))
-        .map(|p| radice(&p))
-        .collect()
+    let mut out = parole(testo);
+    out.retain_mut(|p| {
+        let n = p.chars().count();
+        if n <= 1 || PAROLE_VUOTE.contains(&p.as_str()) {
+            return false;
+        }
+        // Come `radice`, senza una seconda copia della parola.
+        if n >= 4 && p.ends_with(['a', 'e', 'i', 'o']) {
+            p.pop();
+        }
+        true
+    });
+    out
 }
 
 /// Trigrammi di un termine, con un segno di bordo ai due lati (`_sc`, `sca`, …, `vo_`).

@@ -13,6 +13,9 @@
 //   il pavimento, materiale da precisare con le tre voci di pavimento e superficie da
 //   completare;
 // * una richiesta che contiene «chiave sbagliata» riceve 401;
+// * «sovraccarico»: due risposte 529 (da ritentare), poi quella buona;
+// * «risposta rotta»: testo che non è il JSON richiesto;
+// * «risposta lenta»: la risposta arriva dopo 20 secondi (per provare «Annulla»);
 // * con lo strumento forzato risponde con un blocco `tool_use`.
 
 import { createServer } from 'node:http';
@@ -119,6 +122,7 @@ function selezione(utente) {
 /** Avvia il server: {url, ricevute, chiudi()}. */
 export async function avviaProviderFinto() {
   const ricevute = [];
+  let sovraccarichi = 0;
   const s = createServer((req, res) => {
     let corpo = '';
     req.on('data', (d) => { corpo += d; });
@@ -141,6 +145,20 @@ export async function avviaProviderFinto() {
           rispondi(401, { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } });
           return;
         }
+        if (/sovraccarico/i.test(utente) && sovraccarichi < 2) {
+          sovraccarichi += 1;
+          rispondi(529, { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } });
+          return;
+        }
+        if (/risposta rotta/i.test(utente)) {
+          rispondi(200, { content: [{ type: 'text', text: 'Certo! Ecco la proposta: {"lavorazioni": [' }], stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 } });
+          return;
+        }
+        if (/risposta lenta/i.test(utente)) {
+          const t = setTimeout(() => rispondi(200, { content: [{ type: 'text', text: JSON.stringify(analisi(utente)) }], stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 } }), 20000);
+          res.on('close', () => clearTimeout(t));
+          return;
+        }
         const risposta = utente.includes('handle):\n') ? selezione(utente) : analisi(utente);
         // Strumento forzato: la risposta è l'input del blocco `tool_use`.
         const strumento = json.tool_choice?.name;
@@ -157,5 +175,5 @@ export async function avviaProviderFinto() {
     });
   });
   await new Promise((ok) => s.listen(0, '127.0.0.1', ok));
-  return { url: `http://127.0.0.1:${s.address().port}`, ricevute, chiudi: () => s.close() };
+  return { url: `http://127.0.0.1:${s.address().port}`, ricevute, chiudi: () => { s.closeAllConnections(); s.close(); } };
 }

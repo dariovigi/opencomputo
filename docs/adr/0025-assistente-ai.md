@@ -207,6 +207,34 @@ pertinenza, preselezionata la più pertinente delle lavorazioni chiare.
     (ogni aggiunta è un passo annullabile). Si dimentica solo cambiando progetto o
     chiedendo una nuova proposta.
 
+### Prestazioni e robustezza (2026-11-12)
+
+34. **Annullamento vero.** `Trasporto::invia_annullabile` e `Attesa::attendi_annullabile`
+    ricevono il segnale di annullamento: il trasporto HTTPS esegue la richiesta su un
+    thread e controlla il segnale ogni 100 ms, le attese tra i tentativi sono a passi.
+    La richiesta abbandonata termina da sola (il risultato viene scartato). L'interruttore
+    del servizio tiene tutti i lavori attivi e li annulla tutti.
+35. **Nessun lucchetto durante la rete.** Ricerca, proposta e stato dell'indice lavorano
+    su una fotografia degli indici (`Arc`) presa sotto il lucchetto; l'indicizzazione
+    toglie l'indice vettoriale dal suo posto, lavora fuori e lo rimette. Nel frattempo
+    le altre operazioni usano la ricerca per parole e lo dicono (`avviso_ricerca`,
+    `in_corso`). Una seconda indicizzazione dello stesso prezzario è un errore, non una
+    coda. Se il prezzario viene ricaricato durante l'indicizzazione, il lavoro vecchio
+    salva la sua cache e non tocca gli indici nuovi.
+36. **Cache a flusso.** Il file dei vettori si legge e si scrive a flusso (niente copia
+    intera in memoria), su file temporaneo con nome unico per processo, `sync_all` e
+    rinomina; non si riscrive se nulla è cambiato. Una cache illeggibile è ignorata e
+    ricostruita.
+37. **Configurazione danneggiata.** Si mette da parte il file e si riparte dai valori
+    predefiniti **senza consenso**: meglio richiedere il consenso che presumerlo.
+38. **Servizio a righe.** L'ingresso è letto da un thread; durante un lavoro una riga
+    `assistente_annulla` (solo nella forma esatta) è applicata subito, le altre aspettano.
+    Le risposte escono sempre nell'ordine delle richieste: il protocollo non cambia.
+39. **Applicazione.** Il comando `richiesta` esegue tutto in `spawn_blocking`: codice
+    bloccante mai sui thread dell'esecutore asincrono.
+40. **Norme precalcolate.** L'indice per parole e quello vettoriale conservano le norme;
+    i punteggi restano interi o `f64` di sola classifica, mai valori contabili.
+
 ## Conseguenze
 
 * Il motore e le validazioni restano uno solo per tutte le interfacce.

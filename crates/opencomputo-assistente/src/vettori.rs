@@ -33,6 +33,8 @@ pub const VERSIONE_FORMATO: u16 = 1;
 const MAGIA: &[u8; 5] = b"OCVEC";
 /// Voci massime accettate in lettura.
 const VOCI_MASSIME: usize = 2_000_000;
+/// Lunghezza massima della testata JSON, in byte.
+const TESTATA_MASSIMA: usize = 65_536;
 /// Dimensioni massime accettate in lettura.
 const DIMENSIONI_MASSIME: u32 = 16_384;
 
@@ -148,6 +150,8 @@ pub enum ErroreIndice {
 struct VoceVettore {
     impronta: [u8; 32],
     vettore: Vec<f32>,
+    /// Norma del vettore, calcolata una volta alla registrazione o alla lettura.
+    norma: f64,
 }
 
 /// Indice vettoriale.
@@ -270,6 +274,7 @@ impl IndiceVettoriale {
             voce.codice.clone(),
             VoceVettore {
                 impronta: voce.impronta,
+                norma: calcolo::norma(&vettore),
                 vettore,
             },
         );
@@ -288,55 +293,87 @@ impl IndiceVettoriale {
         if domanda.len() != self.spazio.dimensioni as usize {
             return Vec::new();
         }
-        let mut r: Vec<(String, i64)> = self
+        let norma = calcolo::norma(domanda);
+        // Si confrontano i riferimenti e si copiano solo i codici dei `k` risultati.
+        let mut r: Vec<(i64, &str)> = self
             .voci
             .iter()
             .filter(|(c, _)| ammessa(c))
-            .map(|(c, v)| (c.clone(), calcolo::coseno_scalato(domanda, &v.vettore)))
+            .map(|(c, v)| {
+                (
+                    calcolo::coseno_scalato(domanda, norma, &v.vettore, v.norma),
+                    c.as_str(),
+                )
+            })
             .collect();
-        r.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        r.truncate(k);
-        r
+        let ordine = |a: &(i64, &str), b: &(i64, &str)| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1));
+        if k < r.len() {
+            if k == 0 {
+                return Vec::new();
+            }
+            r.select_nth_unstable_by(k - 1, ordine);
+            r.truncate(k);
+        }
+        r.sort_unstable_by(ordine);
+        r.into_iter().map(|(p, c)| (c.to_owned(), p)).collect()
     }
 
-    /// Codifica nel formato del file.
-    #[must_use]
-    pub fn codifica(&self) -> Vec<u8> {
+    /// Scrive l'indice nel formato del file, una voce per volta: un indice grande non
+    /// viene mai copiato per intero in memoria.
+    ///
+    /// # Errors
+    /// Errore di scrittura.
+    pub fn scrivi(&self, w: &mut impl std::io::Write) -> std::io::Result<()> {
         let testata = serde_json::to_vec(&Testata {
             spazio: self.spazio.clone(),
             impronta_prezzario: self.impronta_prezzario.clone(),
             voci: self.voci.len(),
         })
         .unwrap_or_default();
-        let dim = self.spazio.dimensioni as usize;
-        let mut out = Vec::with_capacity(16 + testata.len() + self.voci.len() * (64 + 4 * dim));
-        out.extend_from_slice(MAGIA);
-        out.extend_from_slice(&VERSIONE_FORMATO.to_le_bytes());
-        out.extend_from_slice(
+        w.write_all(MAGIA)?;
+        w.write_all(&VERSIONE_FORMATO.to_le_bytes())?;
+        w.write_all(
             &u32::try_from(testata.len())
                 .unwrap_or(u32::MAX)
                 .to_le_bytes(),
-        );
-        out.extend_from_slice(&testata);
+        )?;
+        w.write_all(&testata)?;
+        let dim = self.spazio.dimensioni as usize;
+        let mut riga: Vec<u8> = Vec::with_capacity(4 * dim);
         for (codice, v) in &self.voci {
             let c = codice.as_bytes();
-            out.extend_from_slice(&u16::try_from(c.len()).unwrap_or(u16::MAX).to_le_bytes());
-            out.extend_from_slice(c);
-            out.extend_from_slice(&v.impronta);
+            w.write_all(&u16::try_from(c.len()).unwrap_or(u16::MAX).to_le_bytes())?;
+            w.write_all(c)?;
+            w.write_all(&v.impronta)?;
+            riga.clear();
             for x in &v.vettore {
-                out.extend_from_slice(&x.to_le_bytes());
+                riga.extend_from_slice(&x.to_le_bytes());
             }
+            w.write_all(&riga)?;
         }
+        Ok(())
+    }
+
+    /// Codifica nel formato del file.
+    #[must_use]
+    pub fn codifica(&self) -> Vec<u8> {
+        let dim = self.spazio.dimensioni as usize;
+        let mut out = Vec::with_capacity(256 + self.voci.len() * (64 + 4 * dim));
+        // Scrivere in un vettore non fallisce.
+        let _ = self.scrivi(&mut out);
         out
     }
 
-    /// Legge un indice dal formato del file e verifica che sia dello spazio atteso.
+    /// Legge un indice da un file (o altro flusso) senza caricarlo prima per intero.
     ///
     /// # Errors
-    /// File non valido o di un altro spazio.
-    pub fn decodifica(byte: &[u8], atteso: &SpazioEmbedding) -> Result<Self, ErroreIndice> {
-        let mut l = Lettore { byte, pos: 0 };
-        if l.prendi(5)? != MAGIA {
+    /// File non valido, troncato, con byte in eccesso o di un altro spazio.
+    pub fn leggi(
+        r: &mut impl std::io::Read,
+        atteso: &SpazioEmbedding,
+    ) -> Result<Self, ErroreIndice> {
+        let mut l = Flusso(r);
+        if l.array::<5>()? != *MAGIA {
             return Err(ErroreIndice::NonValido("firma assente".into()));
         }
         let versione = u16::from_le_bytes(l.array::<2>()?);
@@ -346,7 +383,12 @@ impl IndiceVettoriale {
             )));
         }
         let n = u32::from_le_bytes(l.array::<4>()?) as usize;
-        let testata: Testata = serde_json::from_slice(l.prendi(n)?)
+        if n > TESTATA_MASSIMA {
+            return Err(ErroreIndice::NonValido("testata troppo lunga".into()));
+        }
+        let mut testata = vec![0u8; n];
+        l.riempi(&mut testata)?;
+        let testata: Testata = serde_json::from_slice(&testata)
             .map_err(|e| ErroreIndice::NonValido(format!("testata: {e}")))?;
         if &testata.spazio != atteso {
             return Err(ErroreIndice::AltroSpazio {
@@ -361,23 +403,37 @@ impl IndiceVettoriale {
         }
         let dim = testata.spazio.dimensioni as usize;
         let mut voci = BTreeMap::new();
+        let mut riga = vec![0u8; 4 * dim];
         for _ in 0..testata.voci {
             let lc = u16::from_le_bytes(l.array::<2>()?) as usize;
-            let codice = String::from_utf8(l.prendi(lc)?.to_vec())
+            let mut codice = vec![0u8; lc];
+            l.riempi(&mut codice)?;
+            let codice = String::from_utf8(codice)
                 .map_err(|_| ErroreIndice::NonValido("codice non UTF-8".into()))?;
             let impronta = l.array::<32>()?;
+            l.riempi(&mut riga)?;
             let mut vettore = Vec::with_capacity(dim);
-            for _ in 0..dim {
-                let x = f32::from_le_bytes(l.array::<4>()?);
+            for b in riga.chunks_exact(4) {
+                let x = f32::from_le_bytes(b.try_into().unwrap_or([0; 4]));
                 if !x.is_finite() {
                     return Err(ErroreIndice::NonValido("valore non finito".into()));
                 }
                 vettore.push(x);
             }
-            voci.insert(codice, VoceVettore { impronta, vettore });
+            voci.insert(
+                codice,
+                VoceVettore {
+                    impronta,
+                    norma: calcolo::norma(&vettore),
+                    vettore,
+                },
+            );
         }
-        if l.pos != byte.len() {
-            return Err(ErroreIndice::NonValido("byte in eccesso".into()));
+        let mut uno = [0u8; 1];
+        match l.0.read(&mut uno) {
+            Ok(0) => {}
+            Ok(_) => return Err(ErroreIndice::NonValido("byte in eccesso".into())),
+            Err(e) => return Err(ErroreIndice::NonValido(format!("lettura: {e}"))),
         }
         Ok(Self {
             spazio: testata.spazio,
@@ -385,31 +441,34 @@ impl IndiceVettoriale {
             voci,
         })
     }
+
+    /// Legge un indice dal formato del file e verifica che sia dello spazio atteso.
+    ///
+    /// # Errors
+    /// File non valido o di un altro spazio.
+    pub fn decodifica(mut byte: &[u8], atteso: &SpazioEmbedding) -> Result<Self, ErroreIndice> {
+        Self::leggi(&mut byte, atteso)
+    }
 }
 
-struct Lettore<'a> {
-    byte: &'a [u8],
-    pos: usize,
-}
+/// Lettura esatta da un flusso, con gli errori dell'indice.
+struct Flusso<'a, R: std::io::Read>(&'a mut R);
 
-impl<'a> Lettore<'a> {
-    fn prendi(&mut self, n: usize) -> Result<&'a [u8], ErroreIndice> {
-        let fine = self
-            .pos
-            .checked_add(n)
-            .ok_or_else(|| ErroreIndice::NonValido("lunghezza non valida".into()))?;
-        let s = self
-            .byte
-            .get(self.pos..fine)
-            .ok_or_else(|| ErroreIndice::NonValido("file troncato".into()))?;
-        self.pos = fine;
-        Ok(s)
+impl<R: std::io::Read> Flusso<'_, R> {
+    fn riempi(&mut self, b: &mut [u8]) -> Result<(), ErroreIndice> {
+        self.0.read_exact(b).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                ErroreIndice::NonValido("file troncato".into())
+            } else {
+                ErroreIndice::NonValido(format!("lettura: {e}"))
+            }
+        })
     }
 
     fn array<const N: usize>(&mut self) -> Result<[u8; N], ErroreIndice> {
-        self.prendi(N)?
-            .try_into()
-            .map_err(|_| ErroreIndice::NonValido("file troncato".into()))
+        let mut b = [0u8; N];
+        self.riempi(&mut b)?;
+        Ok(b)
     }
 }
 
@@ -509,20 +568,36 @@ pub fn indicizza(
 /// Similitudine coseno: l'unico calcolo in virgola mobile (ADR 0025, decisione 12).
 #[allow(clippy::float_arithmetic, clippy::cast_possible_truncation)]
 mod calcolo {
-    /// Coseno tra due vettori della stessa dimensione, in scala 10⁶ (0 se un vettore è
-    /// nullo).
-    pub(super) fn coseno_scalato(a: &[f32], b: &[f32]) -> i64 {
-        let (mut ab, mut aa, mut bb) = (0.0f64, 0.0f64, 0.0f64);
-        for (x, y) in a.iter().zip(b) {
-            let (x, y) = (f64::from(*x), f64::from(*y));
-            ab += x * y;
-            aa += x * x;
-            bb += y * y;
-        }
-        if aa <= 0.0 || bb <= 0.0 {
+    /// Norma euclidea.
+    pub(super) fn norma(a: &[f32]) -> f64 {
+        a.iter()
+            .map(|x| f64::from(*x) * f64::from(*x))
+            .sum::<f64>()
+            .sqrt()
+    }
+
+    /// Coseno tra due vettori della stessa dimensione, date le loro norme, in scala 10⁶
+    /// (0 se un vettore è nullo).
+    pub(super) fn coseno_scalato(a: &[f32], norma_a: f64, b: &[f32], norma_b: f64) -> i64 {
+        if norma_a <= 0.0 || norma_b <= 0.0 {
             return 0;
         }
-        let c = (ab / (aa.sqrt() * bb.sqrt())).clamp(-1.0, 1.0);
+        // Quattro accumulatori: il compilatore non può riordinare le somme in virgola
+        // mobile da solo, e così il ciclo si vettorizza. L'ordine resta fisso, quindi il
+        // risultato è lo stesso su ogni macchina.
+        let mut s = [0.0f64; 4];
+        let (ca, cb) = (a.chunks_exact(4), b.chunks_exact(4));
+        let (ra, rb) = (ca.remainder(), cb.remainder());
+        for (x, y) in ca.zip(cb) {
+            for ((acc, x), y) in s.iter_mut().zip(x).zip(y) {
+                *acc += f64::from(*x) * f64::from(*y);
+            }
+        }
+        let mut ab = (s[0] + s[1]) + (s[2] + s[3]);
+        for (x, y) in ra.iter().zip(rb) {
+            ab += f64::from(*x) * f64::from(*y);
+        }
+        let c = (ab / (norma_a * norma_b)).clamp(-1.0, 1.0);
         (c * 1_000_000.0).round() as i64
     }
 
@@ -532,11 +607,17 @@ mod calcolo {
 
         #[test]
         fn coseno() {
-            assert_eq!(coseno_scalato(&[1.0, 0.0], &[2.0, 0.0]), 1_000_000);
-            assert_eq!(coseno_scalato(&[1.0, 0.0], &[0.0, 3.0]), 0);
-            assert_eq!(coseno_scalato(&[1.0, 0.0], &[-1.0, 0.0]), -1_000_000);
-            assert_eq!(coseno_scalato(&[1.0, 1.0], &[1.0, 0.0]), 707_107);
-            assert_eq!(coseno_scalato(&[0.0, 0.0], &[1.0, 0.0]), 0);
+            let cos = |a: &[f32], b: &[f32]| coseno_scalato(a, norma(a), b, norma(b));
+            assert_eq!(cos(&[1.0, 0.0], &[2.0, 0.0]), 1_000_000);
+            assert_eq!(cos(&[1.0, 0.0], &[0.0, 3.0]), 0);
+            assert_eq!(cos(&[1.0, 0.0], &[-1.0, 0.0]), -1_000_000);
+            assert_eq!(cos(&[1.0, 1.0], &[1.0, 0.0]), 707_107);
+            assert_eq!(cos(&[0.0, 0.0], &[1.0, 0.0]), 0);
+            // Più di quattro componenti: blocchi e resto.
+            let a = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
+            assert_eq!(cos(&a, &a), 1_000_000);
+            let b = [7.0f32, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0];
+            assert_eq!(cos(&a, &b), 600_000); // 84 / 140
         }
     }
 }

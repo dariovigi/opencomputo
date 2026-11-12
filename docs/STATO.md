@@ -1,6 +1,7 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-10-27. Ultimo lavoro, sul ramo `assistente`: le **voci
+Ultimo aggiornamento: 2026-11-12. Ultimo lavoro, sul ramo `assistente`: **prestazioni e
+robustezza dell'assistente AI** (sezione qui sotto; ADR 0025, decisioni 34–40), dopo le **voci
 alternative** dell'assistente AI (opzioni in ordine di pertinenza da spuntare, misure
 modificabili; ADR 0025, decisioni 29–33), dopo la fase 4 (vista «Assistente AI»
 nell'interfaccia), la fase 3
@@ -21,6 +22,78 @@ un'altra voce del computo, statici nel libretto; schema 6), dopo le voci affianc
 computo (vista divisa con «>» e «<»), il trascinamento di voci tra finestre, l'export sperimentale
 dell'elenco prezzi in DCF, la stampa nel modello tradizionale e il completamento delle
 analisi prezzi.
+
+## Prestazioni e robustezza dell'assistente AI (2026-11-12)
+
+Ambito: quanto costruito per l'assistente (listini, `opencomputo-assistente`,
+`opencomputo-rete`, servizio, vista). Prima si è misurato, poi ottimizzato, poi provato
+in condizioni reali.
+
+### Misure (30.000 voci, vettori da 1536, Linux, `--release`)
+
+`cargo run --release -p opencomputo-agent-api --example misura_assistente 30000 1536`
+(provider finti in memoria: i tempi sono quelli del programma, senza rete).
+
+| Operazione | Prima | Dopo |
+|---|---|---|
+| `carica_prezzario` (CSV) | 6226 ms | 112–130 ms |
+| prima ricerca per parole (costruisce l'indice) | 966 ms | 303 ms |
+| ricerche per parole successive | 88 ms | 18 ms |
+| `assistente_indicizza` senza voci nuove | 645 ms | 31 ms |
+| ricerca ibrida | 190 ms | 86 ms |
+| `assistente_proponi` (escluso il modello) | 212 ms | 101 ms |
+| memoria massima del processo | 537 MB | 358 MB |
+
+### Difetti trovati dai nuovi test e corretti
+
+* «Annulla» non interrompeva una richiesta già partita né l'attesa tra i tentativi, e
+  annullava solo l'ultimo lavoro avviato.
+* I lavori sullo stesso prezzario si aspettavano l'un l'altro (lucchetto sull'indice
+  tenuto durante le chiamate di rete).
+* Un `assistente.json` danneggiato rendeva l'assistente inutilizzabile fino alla
+  cancellazione a mano del file.
+* Una risposta HTTP troncata non veniva ritentata.
+* Servizio a righe: `assistente_annulla` arrivava solo a lavoro finito.
+* Applicazione vera, build di sviluppo: la prima richiesta all'assistente falliva
+  (client HTTP sincrono creato su un thread dell'esecutore asincrono). Nelle build
+  `--release` il controllo non c'è, ma il codice bloccante girava comunque sul thread
+  sbagliato.
+* Interfaccia: dopo una richiesta fallita spariva la proposta precedente, che nel
+  motore era ancora valida.
+
+### Test aggiunti (tutti eseguiti e passati il 2026-11-12, Rust 1.97.0, Linux)
+
+* `opencomputo-rete/tests/robustezza.rs` (9): il trasporto HTTPS vero contro un server
+  locale che si comporta male (connessioni chiuse, corpi troncati, HTML di un proxy,
+  `retry-after` assurdi, risposte lente, annullamento durante richiesta e attesa).
+* `opencomputo-format-listino/tests/casuali.rs` (2): 4000 listini mutati e byte casuali.
+* `opencomputo-assistente/tests/casuali.rs` (4): 3000 risposte del modello mutate (mai
+  un prezzo, un codice o un comando che non venga dal prezzario e dalle scelte), scelte
+  casuali, testi casuali, cache corrotte.
+* `opencomputo-agent-api/tests/robustezza.rs` (8): il servizio con il trasporto vero e
+  un provider locale a più connessioni, listino di 600 voci in tre lotti: flusso
+  completo fino al file riaperto; indicizzazione interrotta (401) e ripresa da un altro
+  processo; annullamento e lavori contemporanei; prezzario ricaricato durante
+  l'indicizzazione; configurazione e cache danneggiate, cartella non scrivibile;
+  richieste malformate e limiti; provider irraggiungibile; servizio a righe con
+  annullamento.
+* `ui-tests/robustezza.test.mjs` (6, in `npm test`): nell'interfaccia, configurazione
+  danneggiata, provider sovraccarico (529), risposta del modello non valida, risposta
+  lenta annullata, provider irraggiungibile.
+* `ui-tests/applicazione-vera.mjs` (5, `npm run vera`, solo Linux con `tauri-driver`,
+  `WebKitWebDriver` e `xvfb`): il **binario Tauri vero** in una finestra WebKitGTK:
+  consenso e proposta dalla finestra, annullamento, eventi di avanzamento, aggiunta al
+  computo e salvataggio. Non fa parte di `npm test` perché richiede quegli strumenti.
+
+Totali: `cargo test --workspace` 414 test, `npm test` 47, `npm run vera` 5;
+`cargo clippy` (con e senza `--all-features`) e `cargo deny check` puliti.
+
+### Non verificato
+
+* Chiamate reali a OpenAI e Anthropic (i test usano solo server locali).
+* macOS e Windows: i test sono stati eseguiti solo su Linux; i portachiavi di sistema
+  non sono stati provati.
+* Le misure sono di una sola macchina; non c'è un test che le faccia rispettare.
 
 Restano aperti:
 * la prova in PriMus dell'XPWE del computo (file di prova consegnati al titolare);

@@ -6,8 +6,13 @@
 //! `{"id": …, "ok": false, "errore": {"codice": …, "descrizione": …, …}}`; il campo
 //! `id` riporta quello della richiesta, se presente.
 
+use std::collections::VecDeque;
 use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, mpsc};
+use std::thread;
+use std::time::Duration;
 
 use chrono::NaiveDate;
 use opencomputo_application::casi_uso::{self, FormatoReport, TipoReport};
@@ -401,6 +406,8 @@ pub struct Servizio {
     /// Cresce a ogni cambio di progetto: un lavoro concluso su un altro progetto non
     /// lascia proposte da applicare.
     generazione: u64,
+    /// Cresce a ogni prezzario caricato e a ogni cambio di progetto.
+    caricamenti: u64,
 }
 
 /// Primo passo di una richiesta: risposta pronta oppure lavoro da eseguire.
@@ -505,8 +512,8 @@ impl Servizio {
                 Ok(v)
             }
             Richiesta::AssistenteAnnulla {} => {
-                self.interruttore.annulla();
-                Ok(json!({"annullamento": "chiesto"}))
+                let lavori = self.interruttore.annulla();
+                Ok(json!({"annullamento": "chiesto", "lavori": lavori}))
             }
             r if r.e_lavoro() => {
                 let l = self.prepara(r, None)?;
@@ -551,6 +558,15 @@ impl Servizio {
                         "la richiesta è vuota",
                     ));
                 }
+                if testo.chars().count() > assistente::RICHIESTA_MASSIMA {
+                    return Err(assistente::errore(
+                        "richiesta_troppo_lunga",
+                        format!(
+                            "la richiesta supera {} caratteri: dividerla in più richieste",
+                            assistente::RICHIESTA_MASSIMA
+                        ),
+                    ));
+                }
                 (
                     prezzario,
                     TipoLavoro::Proponi { testo, computo },
@@ -565,7 +581,8 @@ impl Servizio {
             let progetto = matches!(tipo, TipoLavoro::Proponi { .. }).then(|| s.progetto().clone());
             (p, progetto)
         };
-        let attrezzi = self.assistente()?.attrezzi(&nome, bisogno)?;
+        let chiave = self.caricamenti;
+        let attrezzi = self.assistente()?.attrezzi(&nome, chiave, bisogno)?;
         Ok(Lavoro {
             id,
             generazione: self.generazione,
@@ -574,7 +591,7 @@ impl Servizio {
             nome,
             prezzario,
             progetto,
-            annullamento: self.interruttore.nuovo(),
+            segnale: self.interruttore.nuovo(),
         })
     }
 
@@ -681,8 +698,9 @@ impl Servizio {
         self.gzip = percorso.as_deref().is_some_and(compresso);
         self.sessione = Some(s.con_politica(self.politica.clone()));
         self.generazione = self.generazione.wrapping_add(1);
+        self.caricamenti = self.caricamenti.wrapping_add(1);
         if let Some(a) = self.assistente.as_mut() {
-            a.dimentica_proposta();
+            a.progetto_cambiato();
         }
         self.percorso = percorso;
         Ok(())
@@ -760,6 +778,7 @@ impl Servizio {
                 )?;
                 let voci = prezzario.voci.len();
                 self.aperta_mut()?.carica_prezzario(&nome, prezzario);
+                self.caricamenti = self.caricamenti.wrapping_add(1);
                 Ok(json!({
                     "nome": nome,
                     "formato": rapporto.formato,
@@ -884,8 +903,9 @@ impl Servizio {
                 let chiuso = self.sessione.take().is_some();
                 self.percorso = None;
                 self.generazione = self.generazione.wrapping_add(1);
+                self.caricamenti = self.caricamenti.wrapping_add(1);
                 if let Some(a) = self.assistente.as_mut() {
-                    a.dimentica_proposta();
+                    a.progetto_cambiato();
                 }
                 Ok(json!({"chiuso": chiuso}))
             }
@@ -957,26 +977,135 @@ impl Servizio {
     }
 
     /// Ciclo del servizio: una richiesta per riga, fino alla fine dell'ingresso.
-    /// Le righe vuote sono ignorate.
+    /// Le righe vuote sono ignorate. Le risposte escono nell'ordine delle richieste.
+    ///
+    /// L'ingresso è letto da un thread a parte: mentre un lavoro lungo dell'assistente è
+    /// in corso, una riga `assistente_annulla` ha effetto subito (la sua risposta esce
+    /// comunque dopo quella del lavoro); le altre righe aspettano il loro turno.
     ///
     /// # Errors
     /// Errori di lettura o scrittura dei flussi.
-    pub fn servi(&mut self, ingresso: impl BufRead, mut uscita: impl Write) -> io::Result<()> {
-        for riga in ingresso.split(b'\n') {
-            let riga = riga?;
-            // Una riga non UTF-8 riceve un errore, ma il servizio continua.
-            let r = match String::from_utf8(riga) {
-                Ok(riga) if riga.trim().is_empty() => continue,
-                Ok(riga) => self.rispondi(riga.trim_end_matches('\r')),
-                Err(_) => risposta(
-                    None,
-                    Err(richiesta("riga non valida: il testo non è UTF-8")),
-                ),
-            };
-            serde_json::to_writer(&mut uscita, &r)?;
-            uscita.write_all(b"\n")?;
-            uscita.flush()?;
+    pub fn servi(
+        &mut self,
+        ingresso: impl BufRead + Send + 'static,
+        mut uscita: impl Write,
+    ) -> io::Result<()> {
+        /// Una riga letta, oppure la risposta già pronta di un annullamento anticipato.
+        enum Voce {
+            Riga(io::Result<Vec<u8>>),
+            Pronta(Value),
         }
-        Ok(())
+        let (tx, rx) = mpsc::channel::<io::Result<Vec<u8>>>();
+        // Il ricevitore passa alla sentinella per la durata di un lavoro.
+        let rx = Mutex::new(rx);
+        let ricevi = |attesa: Option<Duration>| {
+            let rx = rx.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            match attesa {
+                Some(d) => rx.recv_timeout(d).ok(),
+                None => rx.recv().ok(),
+            }
+        };
+        // Thread non legato al ciclo: se l'uscita si chiude, il servizio termina anche con
+        // la lettura ancora in attesa.
+        thread::spawn(move || {
+            for riga in ingresso.split(b'\n') {
+                if tx.send(riga).is_err() {
+                    break;
+                }
+            }
+        });
+        {
+            let mut in_attesa: VecDeque<Voce> = VecDeque::new();
+            loop {
+                let voce = match in_attesa.pop_front() {
+                    Some(v) => v,
+                    None => match ricevi(None) {
+                        Some(r) => Voce::Riga(r),
+                        None => return Ok(()),
+                    },
+                };
+                let r = match voce {
+                    Voce::Pronta(v) => v,
+                    Voce::Riga(riga) => {
+                        // Una riga non UTF-8 riceve un errore, ma il servizio continua.
+                        match String::from_utf8(riga?) {
+                            Ok(riga) if riga.trim().is_empty() => continue,
+                            Ok(riga) => match serde_json::from_str(riga.trim_end_matches('\r')) {
+                                Ok(v) => match self.avvia(v) {
+                                    Passo::Risposta { risposta, .. } => risposta,
+                                    Passo::Lavoro(l) => {
+                                        let finito = AtomicBool::new(false);
+                                        let interruttore = self.interruttore.clone();
+                                        let esito = thread::scope(|lavoro| {
+                                            // Sentinella: legge le righe che arrivano
+                                            // durante il lavoro e applica gli annullamenti.
+                                            let sentinella = lavoro.spawn(|| {
+                                                let mut lette = Vec::new();
+                                                while !finito.load(Ordering::Acquire) {
+                                                    let Some(riga) =
+                                                        ricevi(Some(Duration::from_millis(50)))
+                                                    else {
+                                                        // Anche a ingresso chiuso: nessun giro a vuoto.
+                                                        thread::sleep(Duration::from_millis(20));
+                                                        continue;
+                                                    };
+                                                    lette.push(
+                                                        annullamento_anticipato(
+                                                            &riga,
+                                                            &interruttore,
+                                                        )
+                                                        .map_or(Voce::Riga(riga), Voce::Pronta),
+                                                    );
+                                                }
+                                                lette
+                                            });
+                                            let e = l.esegui(
+                                                self.avanzamento
+                                                    .as_deref()
+                                                    .map(|f| f as &dyn Fn(&Value)),
+                                            );
+                                            finito.store(true, Ordering::Release);
+                                            in_attesa.extend(sentinella.join().unwrap_or_default());
+                                            e
+                                        });
+                                        self.completa(esito).0
+                                    }
+                                },
+                                Err(e) => {
+                                    risposta(None, Err(richiesta(format!("JSON non valido: {e}"))))
+                                }
+                            },
+                            Err(_) => risposta(
+                                None,
+                                Err(richiesta("riga non valida: il testo non è UTF-8")),
+                            ),
+                        }
+                    }
+                };
+                serde_json::to_writer(&mut uscita, &r)?;
+                uscita.write_all(b"\n")?;
+                uscita.flush()?;
+            }
+        }
     }
+}
+
+/// Se la riga è una richiesta `assistente_annulla`, la applica e ne prepara la risposta.
+fn annullamento_anticipato(
+    riga: &io::Result<Vec<u8>>,
+    interruttore: &Interruttore,
+) -> Option<Value> {
+    let v: Value = serde_json::from_slice(riga.as_ref().ok()?).ok()?;
+    let m = v.as_object()?;
+    // Solo la forma esatta: qualsiasi altra riga segue il percorso normale, errori compresi.
+    if m.get("richiesta")? != "assistente_annulla"
+        || m.keys().any(|k| k != "richiesta" && k != "id")
+    {
+        return None;
+    }
+    let lavori = interruttore.annulla();
+    Some(risposta(
+        m.get("id").cloned(),
+        Ok(json!({"annullamento": "chiesto", "lavori": lavori})),
+    ))
 }

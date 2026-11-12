@@ -84,7 +84,8 @@ pub struct IndiceTestuale {
     per_codice: BTreeMap<String, u32>,
     vocabolario: BTreeMap<String, Termine>,
     per_trigramma: BTreeMap<String, Vec<String>>,
-    lunghezza_totale: u64,
+    /// Normalizzazione di BM25 per documento, in scala: 1 − b + b · dl / dl_medio.
+    norme: Vec<i128>,
 }
 
 /// Capitoli del prezzario per identificativo.
@@ -168,7 +169,10 @@ impl IndiceTestuale {
     #[must_use]
     pub fn new(p: &Prezzario) -> Self {
         let mut documenti = Vec::with_capacity(p.voci.len());
-        let mut conteggi: BTreeMap<String, Vec<(u32, u32)>> = BTreeMap::new();
+        // Tabella hash durante la costruzione (milioni di inserimenti); l'ordine dei
+        // termini lo ristabilisce il vocabolario, che è ordinato.
+        let mut conteggi: std::collections::HashMap<String, Vec<(u32, u32)>> =
+            std::collections::HashMap::new();
         let mut lunghezza_totale = 0u64;
         let mappa = mappa_capitoli(p);
         for (i, v) in p.voci.iter().enumerate() {
@@ -176,19 +180,28 @@ impl IndiceTestuale {
             // Le parole della voce contano il doppio di quelle dei capitoli: il capitolo
             // dà il contesto, la descrizione decide tra voci dello stesso capitolo.
             let (proprio, capitoli) = testi_di(&mappa, v);
-            let t: Vec<String> = termini(&proprio)
+            let mut pesati: Vec<(String, u32)> = termini(&proprio)
                 .into_iter()
-                .flat_map(|x| [x.clone(), x])
-                .chain(termini(&capitoli))
+                .map(|x| (x, 2))
+                .chain(termini(&capitoli).into_iter().map(|x| (x, 1)))
                 .collect();
-            let mut frequenze: BTreeMap<String, u32> = BTreeMap::new();
-            for x in &t {
-                *frequenze.entry(x.clone()).or_default() += 1;
+            let lunghezza = pesati.iter().map(|(_, f)| *f).sum::<u32>();
+            pesati.sort_unstable();
+            let mut corrente: Option<(String, u32)> = None;
+            for (termine, f) in pesati {
+                match &mut corrente {
+                    Some((t, n)) if *t == termine => *n += f,
+                    _ => {
+                        if let Some((t, n)) = corrente.take() {
+                            conteggi.entry(t).or_default().push((indice, n));
+                        }
+                        corrente = Some((termine, f));
+                    }
+                }
             }
-            for (termine, f) in frequenze {
-                conteggi.entry(termine).or_default().push((indice, f));
+            if let Some((t, n)) = corrente {
+                conteggi.entry(t).or_default().push((indice, n));
             }
-            let lunghezza = u32::try_from(t.len()).unwrap_or(u32::MAX);
             lunghezza_totale += u64::from(lunghezza);
             documenti.push(Documento {
                 codice: v.codice.clone(),
@@ -204,6 +217,9 @@ impl IndiceTestuale {
         let n = documenti.len();
         let mut vocabolario = BTreeMap::new();
         let mut per_trigramma: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let mut idf_per_frequenza: BTreeMap<usize, i128> = BTreeMap::new();
+        let mut conteggi: Vec<(String, Vec<(u32, u32)>)> = conteggi.into_iter().collect();
+        conteggi.sort_unstable_by(|a, b| a.0.cmp(&b.0));
         for (termine, occorrenze) in conteggi {
             let tri = trigrammi(&termine);
             for g in &tri {
@@ -215,7 +231,11 @@ impl IndiceTestuale {
             vocabolario.insert(
                 termine,
                 Termine {
-                    idf: idf(n, occorrenze.len()),
+                    // Il logaritmo decimale è lento e i termini rari hanno tutti la stessa
+                    // frequenza: si calcola una volta per frequenza.
+                    idf: *idf_per_frequenza
+                        .entry(occorrenze.len())
+                        .or_insert_with(|| idf(n, occorrenze.len())),
                     occorrenze,
                     trigrammi: tri.len(),
                 },
@@ -226,12 +246,22 @@ impl IndiceTestuale {
             .enumerate()
             .filter_map(|(i, d)| Some((d.codice.clone(), u32::try_from(i).ok()?)))
             .collect();
+        // norma = 1 − b + b · dl / dl_medio, con dl_medio = totale / n: dipende solo dal
+        // documento, si calcola una volta.
+        let n_i = i128::try_from(n).unwrap_or(0);
+        let totale = i128::from(lunghezza_totale).max(1);
+        let norme = documenti
+            .iter()
+            .map(|d| {
+                SCALA_I * 25 / 100 + SCALA_I * 75 / 100 * i128::from(d.lunghezza) * n_i / totale
+            })
+            .collect();
         Self {
             documenti,
             per_codice,
             vocabolario,
             per_trigramma,
-            lunghezza_totale,
+            norme,
         }
     }
 
@@ -292,11 +322,9 @@ impl IndiceTestuale {
     /// Cerca le voci più pertinenti alla domanda, al massimo `k`.
     #[must_use]
     pub fn cerca(&self, domanda: &str, k: usize, filtro: &FiltroVoci) -> Vec<RisultatoRicerca> {
-        let n = i128::try_from(self.documenti.len()).unwrap_or(0);
-        if n == 0 || k == 0 {
+        if self.documenti.is_empty() || k == 0 {
             return Vec::new();
         }
-        let totale = i128::from(self.lunghezza_totale).max(1);
         let domanda: BTreeSet<String> = termini(domanda).into_iter().collect();
         // Termine dell'indice → peso in scala (il massimo se più termini vi portano).
         let mut pesi: BTreeMap<String, i128> = BTreeMap::new();
@@ -310,45 +338,61 @@ impl IndiceTestuale {
                 }
             }
         }
-        let mut punteggi: BTreeMap<u32, (i128, Vec<String>)> = BTreeMap::new();
+        // Punteggi in un vettore denso: un termine comune tocca quasi tutte le voci.
+        let mut punteggi: Vec<i128> = vec![0; self.documenti.len()];
+        let mut toccati: Vec<u32> = Vec::new();
         for (termine, peso) in &pesi {
             let Some(voce) = self.vocabolario.get(termine) else {
                 continue;
             };
             for &(doc, tf) in &voce.occorrenze {
-                let Some(d) = self.documenti.get(doc as usize) else {
+                let i = doc as usize;
+                let (Some(d), Some(norma), Some(p)) = (
+                    self.documenti.get(i),
+                    self.norme.get(i),
+                    punteggi.get_mut(i),
+                ) else {
                     continue;
                 };
                 if !self.ammesso(d, filtro) {
                     continue;
                 }
                 let tf = i128::from(tf);
-                let dl = i128::from(d.lunghezza);
-                // norma = 1 − b + b · dl / dl_medio, con dl_medio = totale / n.
-                let norma = SCALA_I * 25 / 100 + SCALA_I * 75 / 100 * dl * n / totale;
                 let numeratore = tf * SCALA_I * 22 / 10;
                 let denominatore = tf * SCALA_I + norma * 12 / 10;
                 let parte_tf = numeratore * SCALA_I / denominatore.max(1);
                 let contributo = voce.idf * parte_tf / SCALA_I * peso / SCALA_I;
-                let e = punteggi.entry(doc).or_default();
-                e.0 += contributo;
-                e.1.push(termine.clone());
+                if contributo > 0 {
+                    if *p == 0 {
+                        toccati.push(doc);
+                    }
+                    *p += contributo;
+                }
             }
         }
-        let mut ordinati: Vec<(u32, i128, Vec<String>)> = punteggi
-            .into_iter()
-            .map(|(d, (p, t))| (d, p, t))
-            .filter(|(_, p, _)| *p > 0)
-            .collect();
-        ordinati.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        ordinati
+        let punteggio = |d: u32| punteggi.get(d as usize).copied().unwrap_or(0);
+        toccati.sort_unstable_by(|a, b| punteggio(*b).cmp(&punteggio(*a)).then_with(|| a.cmp(b)));
+        toccati
             .into_iter()
             .take(k)
-            .filter_map(|(d, p, t)| {
+            .filter_map(|d| {
+                // I termini trovati si ricostruiscono solo per i risultati restituiti: le
+                // occorrenze sono in ordine di documento.
+                let termini_trovati = pesi
+                    .keys()
+                    .filter(|t| {
+                        self.vocabolario.get(*t).is_some_and(|v| {
+                            v.occorrenze
+                                .binary_search_by_key(&d, |(doc, _)| *doc)
+                                .is_ok()
+                        })
+                    })
+                    .cloned()
+                    .collect();
                 Some(RisultatoRicerca {
                     codice: self.documenti.get(d as usize)?.codice.clone(),
-                    punteggio: i64::try_from(p).unwrap_or(i64::MAX),
-                    termini_trovati: t,
+                    punteggio: i64::try_from(punteggio(d)).unwrap_or(i64::MAX),
+                    termini_trovati,
                 })
             })
             .collect()

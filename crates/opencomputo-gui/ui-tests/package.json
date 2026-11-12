@@ -5,8 +5,9 @@
   "type": "module",
   "license": "EUPL-1.2",
   "scripts": {
-    "test": "node --test --test-concurrency=1 gui.test.mjs assistente.test.mjs",
-    "collaudo": "node --test --test-concurrency=1 collaudo.test.mjs"
+    "test": "node --test --test-concurrency=1 gui.test.mjs assistente.test.mjs robustezza.test.mjs",
+    "collaudo": "node --test --test-concurrency=1 collaudo.test.mjs",
+    "vera": "node --test --test-concurrency=1 applicazione-vera.mjs"
   },
   "devDependencies": {
     "playwright-core": "1.56.0"

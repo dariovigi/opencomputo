@@ -158,7 +158,11 @@ pub fn esegui(
         if annullamento.annullato() {
             return Err(ErroreAi::Annullato);
         }
-        let dopo = match trasporto.invia(richiesta) {
+        let esito = trasporto.invia_annullabile(richiesta, annullamento);
+        if esito.is_err() && annullamento.annullato() {
+            return Err(ErroreAi::Annullato);
+        }
+        let dopo = match esito {
             Ok(r) => match classifica(provider, &r) {
                 Decisione::Successo => return Ok(r),
                 Decisione::Errore(e) => return Err(e),
@@ -192,7 +196,7 @@ pub fn esegui(
         if annullamento.annullato() {
             return Err(ErroreAi::Annullato);
         }
-        attesa.attendi(pausa);
+        attesa.attendi_annullabile(pausa, annullamento);
     }
     Err(ultimo.unwrap_or(ErroreAi::Rete {
         provider,

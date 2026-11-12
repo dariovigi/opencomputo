@@ -742,6 +742,18 @@ La vista **Assistente AI** ha tre schede.
   OpenAI e Anthropic (si incollano nel campo e si salvano nel portachiavi del sistema;
   dopo il salvataggio non sono più visibili), modelli e limiti di token.
 
+**Annulla** ferma subito l'operazione in corso, anche se il provider non ha ancora
+risposto; l'indicizzazione annullata o interrotta riprende dal punto in cui era. Durante
+l'indicizzazione di un prezzario si può continuare a cercare e a chiedere proposte: usano
+la ricerca per parole finché l'indice non è pronto. Se una richiesta fallisce o viene
+annullata, resta la proposta precedente. Se il provider è sovraccarico o la rete cade,
+l'assistente ritenta da solo alcune volte prima di mostrare l'errore. Una richiesta può
+avere al massimo 20.000 caratteri.
+
+Se il file delle impostazioni dell'assistente risulta danneggiato, viene messo da parte
+(`assistente.json.danneggiato`), tornano le impostazioni predefinite e un avviso nella
+vista chiede di ridare il consenso; le chiavi nel portachiavi non vengono toccate.
+
 La proposta elenca le **lavorazioni** riconosciute nella richiesta. Per ciascuna:
 
 * le **misure** (righi con forma e parametri), comuni a tutte le sue voci, in campi
@@ -893,3 +905,5 @@ controlli: `opencomputo schema-comandi` elenca i comandi disponibili. Vedi il RE
 * L'applicazione è stata provata su Linux; macOS e Windows sono da provare.
 * Assistente AI: le chiamate reali a OpenAI e Anthropic e i portachiavi di macOS e
   Windows non sono ancora stati provati; su Linux le chiavi si perdono al riavvio.
+  Errori di rete, annullamenti e file danneggiati sono provati con provider locali
+  finti, su Linux.

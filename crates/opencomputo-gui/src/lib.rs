@@ -141,33 +141,36 @@ impl Stato {
     }
 }
 
-/// Inoltra una richiesta al servizio. Asincrono: import e report lunghi non bloccano
-/// le finestre.
+/// Inoltra una richiesta al servizio. Tutto il lavoro gira su un thread per operazioni
+/// bloccanti, mai su quelli dell'esecutore asincrono: import, report e chiamate ai
+/// provider non fermano le finestre, e il codice bloccante (lettura dei file, client
+/// HTTP sincrono) non si trova mai in un contesto asincrono.
 #[tauri::command]
 async fn richiesta(
     app: AppHandle,
     finestra: WebviewWindow,
-    stato: State<'_, Stato>,
     richiesta: Value,
 ) -> Result<Value, String> {
-    let passo = stato.servizio().avvia(richiesta);
-    let (risposta, cambiato) = match passo {
-        Passo::Risposta { risposta, cambiato } => (risposta, cambiato),
-        Passo::Lavoro(lavoro) => {
-            // Il servizio non è tenuto durante il lavoro: solo per prepararlo e concluderlo.
-            let etichetta = finestra.label().to_owned();
-            let app_lavoro = app.clone();
-            let esito = tauri::async_runtime::spawn_blocking(move || {
+    let etichetta = finestra.label().to_owned();
+    let app_lavoro = app.clone();
+    let (risposta, cambiato) = tauri::async_runtime::spawn_blocking(move || {
+        let stato = app_lavoro.state::<Stato>();
+        let passo = stato.servizio().avvia(richiesta);
+        match passo {
+            Passo::Risposta { risposta, cambiato } => (risposta, cambiato),
+            Passo::Lavoro(lavoro) => {
+                // Il servizio non è tenuto durante il lavoro: solo per prepararlo e
+                // concluderlo.
                 let avanzamento = |v: &Value| {
                     let _ = app_lavoro.emit_to(etichetta.as_str(), EVENTO_AVANZAMENTO, v);
                 };
-                lavoro.esegui(Some(&avanzamento))
-            })
-            .await
-            .map_err(|e| e.to_string())?;
-            stato.servizio().completa(esito)
+                let esito = lavoro.esegui(Some(&avanzamento));
+                stato.servizio().completa(esito)
+            }
         }
-    };
+    })
+    .await
+    .map_err(|e| e.to_string())?;
     if cambiato {
         let _ = app.emit(EVENTO_AGGIORNATO, json!({"origine": finestra.label()}));
     }

@@ -50,6 +50,9 @@ use serde_json::{Value, json};
 /// Nome del file di configurazione.
 pub const FILE_CONFIGURAZIONE: &str = "assistente.json";
 
+/// Lunghezza massima della richiesta in linguaggio naturale, in caratteri.
+pub const RICHIESTA_MASSIMA: usize = 20_000;
+
 /// Intervallo minimo tra due salvataggi della cache durante l'indicizzazione.
 const SALVATAGGIO_CACHE: Duration = Duration::from_secs(30);
 
@@ -278,38 +281,95 @@ impl std::fmt::Debug for ChiaveApi {
     }
 }
 
-/// Interruttore delle operazioni lunghe: annulla quella in corso senza passare dal
+/// Interruttore delle operazioni lunghe: annulla quelle in corso senza passare dal
 /// servizio (che durante il lavoro resta libero per altre richieste).
 #[derive(Debug, Clone, Default)]
-pub struct Interruttore(Arc<Mutex<Annullamento>>);
+pub struct Interruttore(Arc<Mutex<Attivi>>);
+
+/// Ultimo numero assegnato e segnali dei lavori in corso.
+type Attivi = (u64, Vec<(u64, Annullamento)>);
+
+/// Segnale di annullamento di un lavoro: si toglie dall'interruttore quando il lavoro
+/// finisce (o viene abbandonato).
+#[derive(Debug)]
+pub(crate) struct Segnale {
+    numero: u64,
+    annullamento: Annullamento,
+    interruttore: Interruttore,
+}
+
+impl Segnale {
+    pub(crate) fn annullamento(&self) -> &Annullamento {
+        &self.annullamento
+    }
+}
+
+impl Drop for Segnale {
+    fn drop(&mut self) {
+        self.interruttore
+            .attivi()
+            .1
+            .retain(|(n, _)| *n != self.numero);
+    }
+}
 
 impl Interruttore {
-    fn segnale(&self) -> MutexGuard<'_, Annullamento> {
+    fn attivi(&self) -> MutexGuard<'_, Attivi> {
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// Segnale per una nuova operazione, che diventa quella corrente.
-    pub(crate) fn nuovo(&self) -> Annullamento {
-        let a = Annullamento::new();
-        *self.segnale() = a.clone();
-        a
+    /// Segnale per un nuovo lavoro.
+    pub(crate) fn nuovo(&self) -> Segnale {
+        let annullamento = Annullamento::new();
+        let mut a = self.attivi();
+        a.0 = a.0.wrapping_add(1);
+        let numero = a.0;
+        a.1.push((numero, annullamento.clone()));
+        Segnale {
+            numero,
+            annullamento,
+            interruttore: self.clone(),
+        }
     }
 
-    /// Chiede l'annullamento dell'operazione corrente: si ferma prima della prossima
-    /// chiamata a un provider (o del prossimo nuovo tentativo).
-    pub fn annulla(&self) {
-        self.segnale().annulla();
+    /// Chiede l'annullamento di tutti i lavori in corso: smettono di aspettare la
+    /// risposta del provider e non fanno altre chiamate. Restituisce quanti erano.
+    pub fn annulla(&self) -> usize {
+        let a = self.attivi();
+        for (_, s) in &a.1 {
+            s.annulla();
+        }
+        a.1.len()
+    }
+
+    /// Lavori in corso.
+    #[must_use]
+    pub fn in_corso(&self) -> usize {
+        self.attivi().1.len()
     }
 }
 
 /// Indici di un prezzario caricato.
 struct Indici {
+    /// Caricamento del prezzario per cui gli indici sono stati controllati.
+    chiave: u64,
     impronta: String,
-    da: Vec<VoceDaIndicizzare>,
-    testo: Option<IndiceTestuale>,
-    vettori: Option<IndiceVettoriale>,
+    da: Arc<Vec<VoceDaIndicizzare>>,
+    testo: Option<Arc<IndiceTestuale>>,
+    vettori: Option<Arc<IndiceVettoriale>>,
+    /// Un'indicizzazione sta lavorando sull'indice vettoriale (che intanto non è qui).
+    indicizzazione: bool,
+}
+
+/// Copia degli indici presa con il lucchetto e usata senza: nessuna chiamata ai provider
+/// avviene con il lucchetto tenuto, così i lavori sullo stesso prezzario non si aspettano.
+struct Vista {
+    da: Arc<Vec<VoceDaIndicizzare>>,
+    testo: Option<Arc<IndiceTestuale>>,
+    vettori: Option<Arc<IndiceVettoriale>>,
+    indicizzazione: bool,
 }
 
 /// Indici di un prezzario, con il proprio lucchetto.
@@ -324,6 +384,8 @@ pub struct Assistente {
     config: Configurazione,
     indici: BTreeMap<String, Posto>,
     ultima: Option<Proposta>,
+    /// Avviso sulla configurazione ripristinata, riportato nello stato.
+    avviso_config: Option<String>,
 }
 
 impl std::fmt::Debug for Assistente {
@@ -367,14 +429,44 @@ fn file_errore(percorso: &Path, e: &std::io::Error) -> ErroreApplicazione {
 
 /// Scrive un file sostituendo il precedente solo a scrittura completata.
 fn scrivi_atomico(percorso: &Path, byte: &[u8]) -> Result<(), ErroreApplicazione> {
+    use std::io::Write as _;
+    scrivi_atomico_con(percorso, |f| f.write_all(byte))
+}
+
+/// Scrive un file con la funzione indicata, sostituendo il precedente solo a scrittura
+/// completata e portata su disco. Il file temporaneo ha un nome proprio del processo (due
+/// istanze dell'applicazione non si sovrascrivono) ed è tolto se la scrittura fallisce.
+fn scrivi_atomico_con(
+    percorso: &Path,
+    scrivi: impl FnOnce(&mut std::io::BufWriter<std::fs::File>) -> std::io::Result<()>,
+) -> Result<(), ErroreApplicazione> {
+    use std::io::Write as _;
     if let Some(c) = percorso.parent() {
         std::fs::create_dir_all(c).map_err(|e| file_errore(c, &e))?;
     }
     let mut tmp = percorso.as_os_str().to_owned();
-    tmp.push(".tmp");
+    tmp.push(format!(".{}.tmp", std::process::id()));
     let tmp = PathBuf::from(tmp);
-    std::fs::write(&tmp, byte).map_err(|e| file_errore(&tmp, &e))?;
-    std::fs::rename(&tmp, percorso).map_err(|e| file_errore(percorso, &e))
+    let esito = std::fs::File::create(&tmp).and_then(|f| {
+        let mut w = std::io::BufWriter::with_capacity(1 << 20, f);
+        scrivi(&mut w)?;
+        w.flush()?;
+        w.get_ref().sync_all()
+    });
+    if let Err(e) = esito {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(file_errore(&tmp, &e));
+    }
+    std::fs::rename(&tmp, percorso).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        file_errore(percorso, &e)
+    })
+}
+
+/// Legge un indice vettoriale dal file, senza caricarlo prima per intero.
+fn leggi_vettori(percorso: &Path, spazio: &SpazioEmbedding) -> Option<IndiceVettoriale> {
+    let f = std::fs::File::open(percorso).ok()?;
+    IndiceVettoriale::leggi(&mut std::io::BufReader::with_capacity(1 << 20, f), spazio).ok()
 }
 
 fn adesso() -> String {
@@ -405,6 +497,9 @@ pub(crate) struct Attrezzi {
     generazione: Option<ClienteGenerazione>,
     parametri: Parametri,
     posto: Posto,
+    /// Cambia a ogni caricamento di prezzario o cambio di progetto: con la stessa chiave
+    /// il prezzario è lo stesso e gli indici non si ricontrollano.
+    chiave: u64,
 }
 
 impl Assistente {
@@ -414,10 +509,27 @@ impl Assistente {
     /// File di configurazione presente ma non leggibile.
     pub fn new(ambiente: Ambiente) -> Result<Self, ErroreApplicazione> {
         let p = ambiente.cartella.join(FILE_CONFIGURAZIONE);
+        let mut avviso_config = None;
         let config = match std::fs::read(&p) {
-            Ok(b) => serde_json::from_slice(&b).map_err(|e| ErroreApplicazione::File {
-                messaggio: format!("{}: {e}", p.display()),
-            })?,
+            Ok(b) => match serde_json::from_slice(&b) {
+                Ok(c) => c,
+                Err(e) => {
+                    // File danneggiato (scrittura interrotta, modifica a mano): si mette da
+                    // parte e si riparte dai valori predefiniti, senza consenso. Fallire
+                    // qui bloccherebbe l'assistente finché l'utente non cancella il file.
+                    let da_parte = p.with_extension("json.danneggiato");
+                    let spostato = std::fs::rename(&p, &da_parte).is_ok();
+                    avviso_config = Some(format!(
+                        "il file di configurazione non era leggibile ({e}): {} e sono stati ripristinati i valori predefiniti; il consenso va dato di nuovo",
+                        if spostato {
+                            format!("è stato rinominato in {}", da_parte.display())
+                        } else {
+                            "non è stato possibile metterlo da parte".to_owned()
+                        }
+                    ));
+                    Configurazione::default()
+                }
+            },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Configurazione::default(),
             Err(e) => return Err(file_errore(&p, &e)),
         };
@@ -426,12 +538,20 @@ impl Assistente {
             config,
             indici: BTreeMap::new(),
             ultima: None,
+            avviso_config,
         })
     }
 
     /// Dimentica l'ultima proposta (il progetto aperto è cambiato).
     pub fn dimentica_proposta(&mut self) {
         self.ultima = None;
+    }
+
+    /// Il progetto è cambiato: nessun prezzario è più caricato, gli indici in memoria si
+    /// liberano (i vettori restano nella cache su disco).
+    pub fn progetto_cambiato(&mut self) {
+        self.ultima = None;
+        self.indici.clear();
     }
 
     /// Conserva la proposta da applicare (o nessuna).
@@ -504,6 +624,7 @@ impl Assistente {
                 "dimensioni_predefinite": dimensioni_predefinite(&self.config.modello_embedding),
             },
             "cartella": self.ambiente.cartella,
+            "avviso": self.avviso_config,
         }))
     }
 
@@ -668,6 +789,7 @@ impl Assistente {
     pub(crate) fn attrezzi(
         &mut self,
         nome: &str,
+        chiave: u64,
         bisogno: Bisogno,
     ) -> Result<Attrezzi, ErroreApplicazione> {
         if bisogno != Bisogno::Niente {
@@ -694,6 +816,7 @@ impl Assistente {
                 ..Parametri::default()
             },
             posto: self.indici.entry(nome.to_owned()).or_default().clone(),
+            chiave,
         })
     }
 
@@ -735,19 +858,35 @@ impl Attrezzi {
         p: &Prezzario,
         testo: bool,
     ) -> &'a mut Indici {
-        let da = da_indicizzare(p, LimitiLotto::default().caratteri_per_testo);
-        let impronta = impronta_prezzario(&da);
-        if posto.as_ref().is_some_and(|i| i.impronta != impronta) {
-            *posto = None;
+        // Comporre e firmare il testo di ogni voce costa decine di millisecondi su un
+        // prezzario grande: si rifà solo se il prezzario può essere cambiato.
+        if posto.as_ref().is_none_or(|i| i.chiave != self.chiave) {
+            let da = da_indicizzare(p, LimitiLotto::default().caratteri_per_testo);
+            let impronta = impronta_prezzario(&da);
+            match posto {
+                Some(i) if i.impronta == impronta => i.chiave = self.chiave,
+                _ => {
+                    *posto = Some(Indici {
+                        chiave: self.chiave,
+                        impronta,
+                        da: Arc::new(da),
+                        testo: None,
+                        vettori: None,
+                        indicizzazione: false,
+                    });
+                }
+            }
         }
         let i = posto.get_or_insert_with(|| Indici {
-            impronta,
-            da,
+            chiave: self.chiave,
+            impronta: String::new(),
+            da: Arc::default(),
             testo: None,
             vettori: None,
+            indicizzazione: false,
         });
         if testo && i.testo.is_none() {
-            i.testo = Some(IndiceTestuale::new(p));
+            i.testo = Some(Arc::new(IndiceTestuale::new(p)));
         }
         if i.vettori
             .as_ref()
@@ -756,13 +895,26 @@ impl Attrezzi {
             i.vettori = None;
         }
         if i.vettori.is_none()
+            && !i.indicizzazione
             && let Some(spazio) = &self.spazio
-            && let Ok(b) = std::fs::read(self.percorso_vettori(&i.impronta, spazio))
         {
             // Una cache illeggibile o di un altro spazio si ignora: sarà ricalcolata.
-            i.vettori = IndiceVettoriale::decodifica(&b, spazio).ok();
+            i.vettori =
+                leggi_vettori(&self.percorso_vettori(&i.impronta, spazio), spazio).map(Arc::new);
         }
         i
+    }
+
+    /// Copia degli indici, presa con il lucchetto.
+    fn vista(&self, p: &Prezzario, testo: bool) -> Vista {
+        let mut posto = self.posto();
+        let i = self.indici(&mut posto, p, testo);
+        Vista {
+            da: i.da.clone(),
+            testo: i.testo.clone(),
+            vettori: i.vettori.clone(),
+            indicizzazione: i.indicizzazione,
+        }
     }
 
     /// Indice della cache più recente dello spazio indicato, se leggibile.
@@ -774,12 +926,11 @@ impl Attrezzi {
             .filter(|e| e.file_name().to_string_lossy().ends_with(&fine))
             .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
             .max()?;
-        let b = std::fs::read(piu_recente.1).ok()?;
-        IndiceVettoriale::decodifica(&b, spazio).ok()
+        leggi_vettori(&piu_recente.1, spazio)
     }
 
     /// Client degli embedding utilizzabile con l'indice: completo e dello stesso spazio.
-    fn embedding_per(&self, i: &Indici) -> Option<&ClienteEmbedding> {
+    fn embedding_per(&self, i: &Vista) -> Option<&ClienteEmbedding> {
         let v = i.vettori.as_ref()?;
         self.embedding
             .as_ref()
@@ -788,8 +939,7 @@ impl Attrezzi {
 
     /// Stato dell'indice di un prezzario, senza chiamate.
     pub(crate) fn indice(&self, nome: &str, p: &Prezzario) -> Value {
-        let mut posto = self.posto();
-        let i = self.indici(&mut posto, p, false);
+        let i = self.vista(p, false);
         let aggiornate = i
             .vettori
             .as_ref()
@@ -799,12 +949,15 @@ impl Attrezzi {
             "voci": i.da.len(),
             "indicizzate": aggiornate,
             "completo": !i.da.is_empty() && aggiornate == i.da.len(),
+            "in_corso": i.indicizzazione,
             "spazio": self.spazio,
-            "ricerca": if self.embedding_per(i).is_some() { "ibrida" } else { "testuale" },
+            "ricerca": if self.embedding_per(&i).is_some() { "ibrida" } else { "testuale" },
         })
     }
 
-    /// Calcola (o completa) l'indice vettoriale di un prezzario.
+    /// Calcola (o completa) l'indice vettoriale di un prezzario. L'indice è tolto dal suo
+    /// posto per la durata del lavoro (le ricerche nel frattempo sono solo testuali) e
+    /// rimesso alla fine.
     pub(crate) fn indicizza(
         &self,
         nome: &str,
@@ -817,27 +970,70 @@ impl Attrezzi {
             .as_ref()
             .ok_or_else(|| errore("interno", "client degli embedding assente"))?;
         let spazio = cliente.spazio();
-        let mut posto = self.posto();
-        let i = self.indici(&mut posto, p, false);
-        if i.vettori.as_ref().is_none_or(|v| v.spazio() != &spazio) {
+        let (impronta, da, vettori) = {
+            let mut posto = self.posto();
+            let i = self.indici(&mut posto, p, false);
+            if i.indicizzazione {
+                return Err(errore(
+                    "indicizzazione_in_corso",
+                    format!("il prezzario «{nome}» è già in corso di indicizzazione"),
+                ));
+            }
             // Prezzario cambiato (o nuovo): si parte dalla cache più recente dello stesso
             // spazio; le voci con lo stesso codice e lo stesso testo non si ricalcolano.
-            i.vettori = Some(
-                self.cache_recente(&spazio)
+            let vettori = match i.vettori.take().filter(|v| v.spazio() == &spazio) {
+                Some(v) => Arc::unwrap_or_clone(v),
+                None => self
+                    .cache_recente(&spazio)
                     .unwrap_or_else(|| IndiceVettoriale::new(spazio.clone(), &i.impronta)),
-            );
-        }
-        let percorso = self.percorso_vettori(&i.impronta, &spazio);
-        let Some(vettori) = i.vettori.as_mut() else {
-            return Err(errore("interno", "indice vettoriale assente"));
+            };
+            i.indicizzazione = true;
+            (i.impronta.clone(), i.da.clone(), vettori)
         };
+        let percorso = self.percorso_vettori(&impronta, &spazio);
+        let (vettori, esito) = self.indicizza_fuori(
+            cliente,
+            vettori,
+            &da,
+            &percorso,
+            nome,
+            annullamento,
+            avanzamento,
+        );
+        {
+            // L'indice torna al suo posto se il prezzario è ancora quello.
+            let mut posto = self.posto();
+            if let Some(i) = posto.as_mut().filter(|i| i.impronta == impronta) {
+                i.indicizzazione = false;
+                i.vettori = Some(Arc::new(vettori));
+            }
+        }
+        let r = esito?;
+        Ok(json!({"prezzario": nome, "spazio": spazio, "rapporto": r, "file": percorso}))
+    }
+
+    /// Parte dell'indicizzazione senza lucchetto: chiamate al provider e salvataggi.
+    #[allow(clippy::too_many_arguments)]
+    fn indicizza_fuori(
+        &self,
+        cliente: &ClienteEmbedding,
+        mut vettori: IndiceVettoriale,
+        da: &[VoceDaIndicizzare],
+        percorso: &Path,
+        nome: &str,
+        annullamento: &Annullamento,
+        avanzamento: Option<&dyn Fn(&Value)>,
+    ) -> (
+        IndiceVettoriale,
+        Result<opencomputo_assistente::vettori::RapportoIndicizzazione, ErroreApplicazione>,
+    ) {
         // Il file può essere grande (decine di MB): si salva al più ogni 30 secondi e alla
         // fine, anche se l'indicizzazione si interrompe.
         let mut ultimo = Instant::now();
         let mut errore_salvataggio = None;
-        let r = indicizza(cliente, vettori, &i.da, annullamento, |iv, a| {
+        let r = indicizza(cliente, &mut vettori, da, annullamento, |iv, a| {
             if ultimo.elapsed() >= SALVATAGGIO_CACHE {
-                if let Err(e) = scrivi_atomico(&percorso, &iv.codifica()) {
+                if let Err(e) = scrivi_atomico_con(percorso, |w| iv.scrivi(w)) {
                     errore_salvataggio = Some(e);
                 }
                 ultimo = Instant::now();
@@ -846,13 +1042,20 @@ impl Attrezzi {
                 f(&json!({"avanzamento": "indicizzazione", "prezzario": nome, "stato": a}));
             }
         });
-        let salvato = scrivi_atomico(&percorso, &vettori.codifica());
-        let r = r.map_err(|e| da_ai(&e))?;
-        if let Some(e) = errore_salvataggio {
-            return Err(e);
-        }
-        salvato?;
-        Ok(json!({"prezzario": nome, "spazio": spazio, "rapporto": r, "file": percorso}))
+        // Niente di calcolato né di tolto e file già presente: nulla da riscrivere.
+        let invariato =
+            r.as_ref().is_ok_and(|r| r.calcolate == 0 && r.rimosse == 0) && percorso.is_file();
+        let salvato = if invariato {
+            Ok(())
+        } else {
+            scrivi_atomico_con(percorso, |w| vettori.scrivi(w))
+        };
+        let esito = match (r, errore_salvataggio, salvato) {
+            (Err(e), _, _) => Err(da_ai(&e)),
+            (Ok(_), Some(e), _) | (Ok(_), None, Err(e)) => Err(e),
+            (Ok(r), None, Ok(())) => Ok(r),
+        };
+        (vettori, esito)
     }
 
     /// Ricerca nel prezzario: ibrida se l'indice vettoriale è completo e utilizzabile,
@@ -865,13 +1068,12 @@ impl Attrezzi {
         dimensione: Option<&str>,
         annullamento: &Annullamento,
     ) -> Result<Value, ErroreApplicazione> {
-        let mut posto = self.posto();
-        let i = self.indici(&mut posto, p, true);
+        let i = self.vista(p, true);
         let filtro = FiltroVoci {
             dimensioni: dimensione.map(dimensioni_attese).unwrap_or_default(),
             ..FiltroVoci::default()
         };
-        let vettore = match self.embedding_per(i) {
+        let vettore = match self.embedding_per(&i) {
             Some(c) => c
                 .embed(&[testo.to_owned()], annullamento)
                 .map_err(|e| da_ai(&e))?
@@ -879,19 +1081,26 @@ impl Attrezzi {
                 .next(),
             None => None,
         };
-        let Some(indice_testo) = i.testo.as_ref() else {
+        let Some(indice_testo) = i.testo.as_deref() else {
             return Err(errore("interno", "indice testuale assente"));
         };
         let codici = cerca_ibrida(
             indice_testo,
-            i.vettori.as_ref().zip(vettore.as_deref()),
+            i.vettori.as_deref().zip(vettore.as_deref()),
             testo,
             limite,
             &filtro,
         );
+        // Mappa dei codici: `voce_per_codice` scorre tutte le voci a ogni chiamata.
+        let per_codice: BTreeMap<&str, &opencomputo_core::prezzario::VocePrezzario> = p
+            .voci
+            .iter()
+            .filter(|v| codici.contains(&v.codice))
+            .map(|v| (v.codice.as_str(), v))
+            .collect();
         let voci: Vec<Value> = codici
             .iter()
-            .filter_map(|c| p.voce_per_codice(c))
+            .filter_map(|c| per_codice.get(c.as_str()))
             .map(|v| {
                 json!({
                     "codice": v.codice,
@@ -919,17 +1128,19 @@ impl Attrezzi {
             .generazione
             .as_ref()
             .ok_or_else(|| errore("interno", "client della generazione assente"))?;
-        let mut posto = self.posto();
-        let i = self.indici(&mut posto, p, true);
-        let emb = self.embedding_per(i);
+        let i = self.vista(p, true);
+        let emb = self.embedding_per(&i);
         let avviso_vettori = match (&i.vettori, emb) {
             (_, Some(_)) => None,
+            _ if i.indicizzazione => {
+                Some("indicizzazione in corso: per ora la ricerca è solo testuale")
+            }
             (Some(v), None) if !v.completo(&i.da) => Some(
                 "indice vettoriale incompleto: ricerca solo testuale (indicizzare il prezzario)",
             ),
             _ => Some("nessun indice vettoriale utilizzabile: ricerca solo testuale"),
         };
-        let Some(indice_testo) = i.testo.as_ref() else {
+        let Some(indice_testo) = i.testo.as_deref() else {
             return Err(errore("interno", "indice testuale assente"));
         };
         let esito = flusso::proponi(
@@ -938,7 +1149,7 @@ impl Attrezzi {
                 embedding: emb.map(|c| c as &dyn Embedding),
                 indice_testo,
                 indice_vettori: if emb.is_some() {
-                    i.vettori.as_ref()
+                    i.vettori.as_deref()
                 } else {
                     None
                 },
@@ -997,7 +1208,7 @@ pub struct Lavoro {
     pub(crate) nome: String,
     pub(crate) prezzario: Prezzario,
     pub(crate) progetto: Option<Progetto>,
-    pub(crate) annullamento: Annullamento,
+    pub(crate) segnale: Segnale,
 }
 
 impl std::fmt::Debug for Lavoro {
@@ -1041,9 +1252,12 @@ impl Lavoro {
         let mut proposta = None;
         let risultato = match &self.tipo {
             TipoLavoro::Indice => Ok(a.indice(&self.nome, &self.prezzario)),
-            TipoLavoro::Indicizza => {
-                a.indicizza(&self.nome, &self.prezzario, &self.annullamento, avanzamento)
-            }
+            TipoLavoro::Indicizza => a.indicizza(
+                &self.nome,
+                &self.prezzario,
+                self.segnale.annullamento(),
+                avanzamento,
+            ),
             TipoLavoro::Cerca {
                 testo,
                 limite,
@@ -1053,7 +1267,7 @@ impl Lavoro {
                 testo,
                 *limite,
                 unita.as_deref(),
-                &self.annullamento,
+                self.segnale.annullamento(),
             ),
             TipoLavoro::Proponi { testo, computo } => match &self.progetto {
                 Some(prog) => a
@@ -1063,7 +1277,7 @@ impl Lavoro {
                         prog,
                         testo,
                         computo.as_deref(),
-                        &self.annullamento,
+                        self.segnale.annullamento(),
                     )
                     .map(|(v, p)| {
                         proposta = p;
