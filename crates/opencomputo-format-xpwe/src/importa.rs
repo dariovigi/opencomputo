@@ -14,6 +14,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use chrono::NaiveDateTime;
+use opencomputo_core::analisi::{AnalisiPrezzo, BaseUtile, OrigineRigaAnalisi, RigaAnalisi};
 use opencomputo_core::classificazione::{AssegnazioneCategorie, Classe, LivelloCategoria};
 use opencomputo_core::computo::{Computo, VoceComputo};
 use opencomputo_core::id::{
@@ -22,7 +23,7 @@ use opencomputo_core::id::{
 use opencomputo_core::misura::{
     Fattore, RigoMisura, SegnoRigo, TipoRigo, VediVoce, quantita_totale,
 };
-use opencomputo_core::numeri::{Percentuale, Prezzo, RegoleArrotondamento};
+use opencomputo_core::numeri::{Percentuale, Prezzo, Quantita, RegoleArrotondamento};
 use opencomputo_core::partita::PrezzoApplicato;
 use opencomputo_core::prezzario::{CapitoloPrezzario, NaturaVoce, Prezzario, VocePrezzario};
 use opencomputo_core::progetto::Progetto;
@@ -31,6 +32,7 @@ use opencomputo_core::validazione::Gravita;
 use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
 
+use crate::analisi as deduzioni;
 use crate::conservati::{self, Dati, Regole};
 use crate::errore::ErroreXpwe;
 use crate::struttura as st;
@@ -65,6 +67,8 @@ pub struct Statistiche {
     pub voci_elenco: usize,
     /// Voci di elenco prezzi scartate.
     pub voci_elenco_scartate: usize,
+    /// Analisi dei prezzi importate.
+    pub analisi: usize,
     /// Voci di computo importate.
     pub voci_computo: usize,
     /// Voci di computo scartate.
@@ -907,6 +911,11 @@ fn importa_misurazioni<G: GeneratoreId>(
         for item in ep.figli_con_nome(st::EP_ITEM) {
             importa_voce_elenco(cx, item, &p_ep, progetto, capitoli, &mut voci_ep);
         }
+        // Le analisi dopo tutte le voci: un componente può riferirsi a una voce che nel
+        // file viene dopo.
+        for item in ep.figli_con_nome(st::EP_ITEM) {
+            importa_analisi(cx, item, &p_ep, progetto, &voci_ep);
+        }
     } else if vc_nodo.is_some_and(|vc| vc.figli.iter().any(|f| f.nome == st::VC_ITEM)) {
         // Senza elenco nessuna voce di computo è risolvibile: ognuna sarà segnalata.
         cx.anomalia(
@@ -1217,20 +1226,6 @@ fn importa_voce_elenco<G: GeneratoreId>(
     } else {
         NaturaVoce::Lavoro
     };
-    // Un contenitore senza componenti (`<PweEPAR />`) non è un'analisi.
-    if let Some(a) = item.figlio(st::EP_ANALISI)
-        && a.figli.iter().any(|f| !f.figli.is_empty())
-    {
-        cx.aggregata(
-            Gravita::Informazione,
-            "xpwe.analisi_non_importata",
-            "EPItem",
-            "analisi del prezzo conservata ma non importata: vale il Prezzo1 dichiarato",
-            a.riga,
-            &percorso,
-        );
-    }
-
     // Capitolo: il livello più profondo risolvibile.
     let mut capitolo = None;
     for (livello, campo) in ["IDSpCap", "IDCap", "IDSbCap"].into_iter().enumerate() {
@@ -1285,6 +1280,217 @@ fn importa_voce_elenco<G: GeneratoreId>(
     });
     voci_ep.insert(id_xpwe.to_owned(), id);
     cx.statistiche.voci_elenco += 1;
+}
+
+/// Testo su una riga sola: spazi e ritorni a capo ripetuti diventano uno spazio.
+fn su_una_riga(t: &str) -> String {
+    t.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Importa l'analisi del prezzo di una voce di elenco, se ne ha una con componenti.
+///
+/// Il prezzo della voce resta quello dichiarato nel file; l'analisi gli viene collegata.
+/// Spese generali, utile e tipi di risorsa non sono nel file: vedi il modulo `analisi`.
+fn importa_analisi<G: GeneratoreId>(
+    cx: &mut Contesto<'_, G>,
+    item: &Nodo,
+    p_ep: &str,
+    progetto: &mut Progetto,
+    voci_ep: &HashMap<String, VocePrezzarioId>,
+) {
+    let Some(contenitore) = item.figlio(st::EP_ANALISI) else {
+        return;
+    };
+    let componenti: Vec<&Nodo> = contenitore
+        .figli
+        .iter()
+        .flat_map(|f| f.figli.iter())
+        .filter(|c| c.nome == st::EPAR_ITEM)
+        .collect();
+    if componenti.is_empty() {
+        return;
+    }
+    let Some(id_xpwe) = item.attributo("ID").map(str::trim) else {
+        return;
+    };
+    let Some(voce_id) = voci_ep.get(id_xpwe).copied() else {
+        return;
+    };
+    let percorso = format!("{p_ep}/{}[ID={id_xpwe}]/{}", st::EP_ITEM, st::EP_ANALISI);
+    let non_importata = |cx: &mut Contesto<'_, G>, perche: &str| {
+        cx.aggregata(
+            Gravita::Informazione,
+            "xpwe.analisi_non_importata",
+            perche,
+            format!("analisi del prezzo conservata ma non importata ({perche}): vale il Prezzo1 dichiarato"),
+            contenitore.riga,
+            &percorso,
+        );
+    };
+
+    let mut righe: Vec<RigaAnalisi> = Vec::new();
+    for c in componenti {
+        let numero = |campo: &str| testo::decimale(testo_campo(c, campo));
+        let (quantita, prezzo) = match (numero("Qt"), numero("Prezzo")) {
+            // Riga di solo testo (titolo di un gruppo): non è un componente.
+            (Ok(None), Ok(None)) => continue,
+            (Ok(Some(q)), Ok(Some(p))) if q >= Decimal::ZERO && p >= Decimal::ZERO => (q, p),
+            _ => {
+                non_importata(cx, "un componente ha quantità o prezzo non validi");
+                return;
+            }
+        };
+        // Componente che rimanda a un'altra voce dell'elenco: i campi vuoti vengono da lì.
+        let riferita = riferimento(c, "IDEP")
+            .and_then(|r| voci_ep.get(&r))
+            .filter(|id| **id != voce_id)
+            .and_then(|id| progetto.elenco_prezzi.voci.iter().find(|v| v.id == *id));
+        let o = |proprio: String, della_voce: fn(&VocePrezzario) -> &str| {
+            if proprio.is_empty() {
+                riferita.map(della_voce).unwrap_or_default().to_owned()
+            } else {
+                proprio
+            }
+        };
+        righe.push(RigaAnalisi {
+            codice: riferita.map(|v| v.codice.clone()).unwrap_or_default(),
+            descrizione: o(su_una_riga(testo_campo(c, "Descrizione")), |v| {
+                &v.descrizione_breve
+            }),
+            unita_misura: o(testo_campo(c, "Misura").trim().to_owned(), |v| {
+                &v.unita_misura
+            }),
+            tipo: opencomputo_core::analisi::TipoRisorsa::Altro,
+            prezzo: Prezzo::new(prezzo),
+            quantita: Quantita::new(quantita),
+            espressione: None,
+            origine: riferita.map(|v| OrigineRigaAnalisi::VocePrezzario(v.id)),
+        });
+    }
+    if righe.is_empty() {
+        non_importata(cx, "nessun componente con quantità e prezzo");
+        return;
+    }
+
+    let regole = progetto.regole.clone();
+    let Some(voce) = progetto.elenco_prezzi.voci.iter().find(|v| v.id == voce_id) else {
+        return;
+    };
+    let dichiarato = voce.prezzo;
+
+    // Tipi di risorsa: quelli che riproducono le incidenze dichiarate sul prezzo.
+    let incidenza = |campo: &str| {
+        testo::decimale(testo_campo(item, campo))
+            .ok()
+            .flatten()
+            .unwrap_or(Decimal::ZERO)
+    };
+    let importi: Vec<Decimal> = righe
+        .iter()
+        .map(|r| {
+            r.prezzo
+                .per_quantita(r.quantita, &regole)
+                .map_or(Decimal::ZERO, |i| i.valore())
+        })
+        .collect();
+    let unita: Vec<&str> = righe.iter().map(|r| r.unita_misura.as_str()).collect();
+    let (tipi, confermati) = deduzioni::classifica(
+        &importi,
+        &unita,
+        dichiarato.valore(),
+        [
+            incidenza("IncMAT"),
+            incidenza("IncMDO"),
+            incidenza("IncATTR"),
+        ],
+    );
+    for (r, t) in righe.iter_mut().zip(tipi) {
+        r.tipo = t;
+    }
+
+    let mut analisi = AnalisiPrezzo {
+        id: cx.generatore.nuovo(),
+        codice: voce.codice.clone(),
+        descrizione: voce.descrizione_breve.clone(),
+        unita_misura: voce.unita_misura.clone(),
+        quantita_riferimento: Quantita::new(Decimal::ONE),
+        righe,
+        spese_generali: Percentuale::ZERO,
+        utile_impresa: Percentuale::ZERO,
+        base_utile: BaseUtile::default(),
+        variabili: Vec::new(),
+        quota_oneri_sicurezza: None,
+    };
+    if analisi.calcola(&regole).is_err() {
+        non_importata(cx, "il calcolo dei componenti non riesce");
+        return;
+    }
+    match deduzioni::deduci_percentuali(&mut analisi, dichiarato, &regole) {
+        Some(p) => {
+            let (sg, utile) = (p.spese_generali.normalize(), p.utile.normalize());
+            cx.aggregata(
+                Gravita::Informazione,
+                "xpwe.analisi_importata",
+                &format!("{sg}/{utile}"),
+                format!(
+                    "analisi del prezzo importata con spese generali {sg} % e utile {utile} %: le percentuali non sono nel file, sono dedotte perché riproducono il prezzo dichiarato"
+                ),
+                contenitore.riga,
+                &percorso,
+            );
+            if p.calcolato != dichiarato {
+                cx.anomalia(
+                    Gravita::Informazione,
+                    "xpwe.analisi_arrotondamento",
+                    format!(
+                        "analisi di «{}»: arrotondando ogni componente OpenComputo calcola {}, il file dichiara {}; resta il prezzo dichiarato (si può riallineare dalla vista «Analisi prezzi»)",
+                        analisi.codice,
+                        p.calcolato.valore(),
+                        dichiarato.valore()
+                    ),
+                    contenitore.riga,
+                    &percorso,
+                );
+            }
+        }
+        None => {
+            let calcolato = analisi
+                .calcola(&regole)
+                .map_or(Decimal::ZERO, |r| r.prezzo_unitario.valore());
+            cx.anomalia(
+                Gravita::Avviso,
+                "xpwe.analisi_prezzo_diverso",
+                format!(
+                    "analisi di «{}» importata senza spese generali e utile: i componenti danno {calcolato}, il file dichiara {}; resta il prezzo dichiarato",
+                    analisi.codice,
+                    dichiarato.valore()
+                ),
+                contenitore.riga,
+                &percorso,
+            );
+        }
+    }
+    if !confermati {
+        cx.aggregata(
+            Gravita::Informazione,
+            "xpwe.analisi_tipi_presunti",
+            "EPItem",
+            "tipo di risorsa dei componenti di analisi presunto dall'unità di misura (ore: manodopera, altrimenti materiale): il file non lo indica e le incidenze dichiarate non bastano a stabilirlo",
+            contenitore.riga,
+            &percorso,
+        );
+    }
+    let id = analisi.id;
+    progetto.elenco_prezzi.analisi.push(analisi);
+    if let Some(v) = progetto
+        .elenco_prezzi
+        .voci
+        .iter_mut()
+        .find(|v| v.id == voce_id)
+    {
+        v.analisi = Some(id);
+    }
+    cx.statistiche.analisi += 1;
 }
 
 /// Contenitore dei righi di una voce: per nome o, in mancanza, l'ultimo figlio con `RGItem`.

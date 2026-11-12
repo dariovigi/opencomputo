@@ -119,6 +119,36 @@ direttamente dalle Regioni in XML aperto (Allegato I.14 al D.Lgs. 36/2023).
 
 Questo testo non costituisce consulenza legale.
 
+## Analisi dei prezzi in XPWE (2026-11-13)
+
+Con un computo reale in XPWE con voci (formato 5.01) sono stati osservati questi fatti:
+`PweEPAnalisi` contiene `PweEPAR` con un `EPARItem` per componente (`Tipo`, `IDEP`,
+`Descrizione`, `Misura`, `Qt`, `Prezzo`, `FieldCTL`; numeri con la virgola decimale;
+`IDEP` = -2 per un componente libero); le voci senza analisi hanno `<PweEPAR />`; il file
+non contiene spese generali, utile né il tipo di risorsa dei componenti; `IncMAT`,
+`IncMDO` e `IncATTR` sono le incidenze sul prezzo; la `Quantita` dei righi di misura
+ripete il totale della voce.
+
+Decisioni:
+
+* le analisi si importano come `AnalisiPrezzo` collegate alla voce; **il prezzo della
+  voce resta quello dichiarato** nel file;
+* spese generali e utile si deducono provando coppie in ordine (13–17 % con utile 10 %,
+  poi senza utile, poi nessuna maggiorazione, poi una griglia a mezzi punti): è accettata
+  la prima con cui il calcolo del core, oppure il calcolo senza arrotondamenti intermedi,
+  dà il prezzo dichiarato. La deduzione è sempre dichiarata nel rapporto; se nessuna
+  coppia torna l'analisi entra senza maggiorazioni, con un avviso;
+* i tipi di risorsa sono quelli che riproducono le tre incidenze dichiarate (fino a otto
+  righe si provano tutte le combinazioni, preferendo «ore = manodopera»); altrimenti
+  ore = manodopera e il resto materiale, dichiarandolo;
+* le righe di solo testo sono titoli e si saltano; un componente con numeri non validi
+  lascia l'analisi non importata (conservata e riesportata);
+* l'export continua a scrivere il frammento originale dell'analisi: le modifiche fatte in
+  OpenComputo non arrivano nell'XPWE (limite dichiarato nella guida).
+
+Non verificato: componenti con `IDEP` che rimanda a un'altra voce (gestiti per analogia,
+senza un file reale) e il significato di `Tipo` e `FieldCTL`.
+
 ## Da verificare con file PriMus reali
 
 * nome di `PweElencoPrezzi`, `PweDGAnalisi` e `PweVCMisure` e struttura di `EPItem`,
@@ -128,7 +158,7 @@ Questo testo non costituisce consulenza legale.
   elenco, rigo parziale `2` sui righi di misura), di `TipoEP` e di `TipoDocumento`;
 * formato dei numeri nelle voci (punto o virgola decimale) e codifica dei caratteri non
   ASCII (l'export osservato è solo ASCII, senza dichiarazione di codifica);
-* struttura delle analisi prezzi (`PweEPAnalisi`) e della contabilità;
+* struttura della contabilità; analisi con componenti riferiti ad altre voci;
 * DCF: significato dei bit di `Fgs` (la natura «sicurezza» usa per ipotesi lo stesso bit
   di XPWE, ma nessuna voce dei file analizzati lo imposta); struttura di `CollectionVC`
   in un documento non protetto;

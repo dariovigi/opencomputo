@@ -39,14 +39,21 @@ nel repository; i test usano dati sintetici con le stesse caratteristiche.
   un componente libero), `Descrizione`, `Misura`, `Qt` e `Prezzo` con la virgola
   decimale; le percentuali di spese generali e utile non sono nel file.
 * **Corretto**: 11 falsi avvisi «quantità diversa» e 6 false segnalazioni di analisi.
-* **Non fatto**: le analisi dei prezzi non vengono importate come analisi di
-  OpenComputo (vale il prezzo dichiarato; i dati sono conservati e riesportati).
-  L'export scrive ancora nei righi la quantità del rigo e una numerazione unica.
+* **Analisi dei prezzi importate** (ADR 0006, sezione del 2026-11-13): sul file reale 13
+  analisi su 13, con 47 componenti; percentuali dedotte per tutte (9 con spese generali
+  17 % e utile 10 %, 4 con 17 % senza utile); i tipi dei componenti riproducono le
+  incidenze dichiarate; totale del computo invariato. Per 6 analisi il calcolo di
+  OpenComputo, che arrotonda ogni componente, differisce di un centesimo dal prezzo del
+  file: resta quello del file e la differenza è segnalata. Test sintetici in
+  `opencomputo-format-xpwe/tests/analisi.rs` (7) e nel modulo `analisi` (3).
+* **Limiti**: l'export XPWE riporta l'analisi originale, non le modifiche fatte in
+  OpenComputo; i componenti riferiti ad altre voci non sono verificati su un file
+  reale; l'export scrive nei righi la quantità del rigo e una numerazione unica.
 * **Interfaccia**: il file ha mostrato che un titolo lungo allargava la pagina oltre la
   finestra (griglie con colonne `1fr`). Corretto, con `ui-tests/finestra.test.mjs`
   (6 test a 1600, 1320, 1100, 960 e 640 px).
 
-Verifica: `cargo test --workspace` 416 test, `npm test` 53, tutti passati su Linux.
+Verifica: `cargo test --workspace` 426 test, `npm test` 53, tutti passati su Linux.
 
 ## Prestazioni e robustezza dell'assistente AI (2026-11-12)
 

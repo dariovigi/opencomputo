@@ -51,6 +51,7 @@
 //! # Ok::<(), opencomputo_format_xpwe::ErroreXpwe>(())
 //! ```
 
+mod analisi;
 pub mod conservati;
 pub mod errore;
 pub mod esporta;

@@ -7,6 +7,13 @@ secondo il versionamento semantico.
 
 Prima versione: tutte le fasi di sviluppo 1–6. Dettagli in `docs/STATO.md`.
 
+### Aggiunto (2026-11-13)
+
+* Import XPWE: le **analisi dei prezzi** entrano come analisi di OpenComputo collegate
+  alle voci. Spese generali, utile e tipo dei componenti, che il file non contiene, sono
+  dedotti dal prezzo e dalle incidenze dichiarati e riportati nel riepilogo dell'import;
+  il prezzo della voce resta quello del file (ADR 0006).
+
 ### Corretto (finestra e XPWE, 2026-11-13)
 
 * Ridimensionamento della finestra: con un titolo dei lavori lungo la pagina diventava

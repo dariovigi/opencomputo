@@ -680,6 +680,16 @@ opencomputo report progetto.ocp sal --numero 2 --tradizionale
 * **XPWE**: elenco prezzi, capitoli, categorie, computo con righi di misura. Quello che
   OpenComputo non usa viene conservato e riscritto nell'export. Dopo l'import un
   riepilogo indica le voci lette e le eventuali segnalazioni.
+  Le **analisi dei prezzi** del file entrano nella vista «Analisi prezzi», collegate alle
+  loro voci. Il file XPWE non contiene le percentuali di spese generali e utile né il tipo
+  di ogni componente: OpenComputo li deduce (le percentuali che riproducono il prezzo del
+  file, provando prima spese generali dal 13 al 17 % con utile del 10 % e poi senza utile;
+  i tipi che riproducono le incidenze di materiali, manodopera e attrezzature del file) e
+  il riepilogo dice che cosa ha dedotto: conviene controllarlo. Il prezzo della voce resta
+  sempre quello del file; se OpenComputo, che arrotonda ogni componente, ottiene qualche
+  centesimo di differenza, la voce è segnata «da allineare» e si decide dalla vista
+  «Analisi prezzi» se applicare il prezzo dell'analisi. L'export XPWE riporta l'analisi
+  com'era nel file, non le modifiche fatte in OpenComputo.
 * **DCF**: solo i contenuti non protetti (di norma elenchi prezzi, capitoli e categorie).
   I file protetti o con password non vengono letti: in quel caso esportare in XPWE da
   PriMus.

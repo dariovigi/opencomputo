@@ -90,6 +90,8 @@ pub const VC_MISURE: &str = "PweVCMisure";
 pub const RG_ITEM: &str = "RGItem";
 /// Analisi del prezzo di una voce di elenco (letto da LeenO; non importata).
 pub const EP_ANALISI: &str = "PweEPAnalisi";
+/// Componente di un'analisi del prezzo (dentro `PweEPAR`).
+pub const EPAR_ITEM: &str = "EPARItem";
 
 /// Elenchi di capitoli e categorie: (nome dell'elenco, nome predefinito degli
 /// elementi). I nomi degli elenchi sono letti da LeenO; i nomi degli elementi sono
