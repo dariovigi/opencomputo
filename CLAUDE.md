@@ -36,6 +36,8 @@
   (`cargo build -p opencomputo-gui --features opencomputo-agent-api/banco-di-prova`).
   Il comando `richiesta` gira sempre in `spawn_blocking`: niente codice bloccante nei
   comandi asincroni.
+  Icone: la sorgente è `icons/opencomputo.svg`; PNG, ICO, ICNS e `ui/icona.png` si
+  rigenerano con `npm run icone` in `ui-tests`, mai a mano.
 * Ogni modifica al progetto passa da `opencomputo-application` (`Comando`, `Sessione`):
   GUI e CLI non scrivono il modello né chiamano i formati direttamente (ADR 0008).
   Aggiungendo una variante a `Comando` aggiornare gli esempi in

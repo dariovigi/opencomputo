@@ -9,6 +9,10 @@ Prima versione: tutte le fasi di sviluppo 1–6. Dettagli in `docs/STATO.md`.
 
 ### Aggiunto (2026-11-13)
 
+* Nuova icona dell'applicazione (`crates/opencomputo-gui/icons/opencomputo.svg`) in tutti
+  i formati: PNG 32, 128, 256 e 1024, `icon.ico` per Windows (16–256), `icon.icns` per
+  macOS (16–1024) e l'icona dell'interfaccia. Si rigenerano dall'SVG con `npm run icone`
+  in `ui-tests`.
 * Report: con il **modello tradizionale** l'anteprima mostra le pagine del PDF con la
   stessa impaginazione (prima mostrava la tabella del modello ordinario). Richiesta
   `anteprima` con `prima_pagina` e `pagine` (ADR 0015).

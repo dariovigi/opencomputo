@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#14505F"/><stop offset="1" stop-color="#0A2530"/></linearGradient>
+<linearGradient id="c" gradientUnits="userSpaceOnUse" x1="0" y1="268" x2="0" y2="756"><stop offset="0" stop-color="#FFC24D"/><stop offset="1" stop-color="#EE9426"/></linearGradient>
+<linearGradient id="o" gradientUnits="userSpaceOnUse" x1="0" y1="268" x2="0" y2="756"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E4EDEE"/></linearGradient>
+<clipPath id="ko"><path clip-rule="evenodd" d="M171,512 a244,244 0 1 0 488,0 a244,244 0 1 0 -488,0 Z M259,512 a156,156 0 1 1 312,0 a156,156 0 1 1 -312,0 Z"/></clipPath><clipPath id="kc"><path clip-rule="evenodd" d="M421,512 a244,244 0 1 0 488,0 a244,244 0 1 0 -488,0 Z M509,512 a156,156 0 1 0 312,0 a156,156 0 1 0 -312,0 Z"/></clipPath>
+</defs>
+<rect width="1024" height="1024" rx="228" fill="url(#bg)"/>
+<g fill="none">
+<circle cx="415" cy="512" r="200" stroke="url(#o)" stroke-width="88"/>
+<path d="M483.74,427.48 A200,200 0 0 1 623.42,316.37" stroke="#0E3441" stroke-width="128" clip-path="url(#ko)"/>
+<path d="M798.83,660.63 A200,200 0 1 1 798.83,363.37" stroke="url(#c)" stroke-width="88" stroke-linecap="round"/>
+<path d="M596.26,596.52 A200,200 0 0 1 456.58,707.63" stroke="#0E3441" stroke-width="128" clip-path="url(#kc)"/>
+<path d="M611.96,546.73 A200,200 0 0 1 397.57,711.24" stroke="url(#o)" stroke-width="88"/>
+</g>
+</svg>
