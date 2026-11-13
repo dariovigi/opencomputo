@@ -125,3 +125,4 @@ rifiuto dei comandi che introducono errori di validazione, SAL emessi immodifica
 
 [EUPL-1.2](LICENSE) (European Union Public Licence), decisione in
 [docs/adr/0005-licenza.md](docs/adr/0005-licenza.md).
+# opencomputo
