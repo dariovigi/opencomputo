@@ -60,6 +60,18 @@ controllare prima di pubblicarla.
 
 Il workflow si può anche avviare a mano da *Actions → Rilascio → Run workflow*.
 
+### Windows senza privilegi di amministratore
+
+* `…-setup.exe` (NSIS) installa **per l'utente corrente** (`installMode: currentUser`), in
+  `%LOCALAPPDATA%`: non chiede la password di amministratore. Il `.msi` invece installa
+  per tutti gli utenti e la chiede.
+* `OpenComputo-portatile-x64.exe` è il programma da solo: si copia dove si vuole (anche su
+  una chiavetta) e si avvia, senza installazione. Non registra il tipo di file `.ocp` né
+  la voce nel menu Start. Le impostazioni stanno comunque in `%APPDATA%\OpenComputo` e le
+  chiavi dell'assistente in Gestione credenziali dell'utente.
+* In entrambi i casi serve WebView2, già presente in Windows 11 e nei Windows 10
+  aggiornati; se manca, l'installer lo scarica (l'eseguibile portatile no).
+
 ## Pacchetti non firmati
 
 I pacchetti attuali non sono firmati:

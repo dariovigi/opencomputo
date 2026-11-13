@@ -13,8 +13,11 @@ XPWE e gli elenchi prezzi dai file DCF non protetti.
 * **macOS**: aprire il `.dmg` e trascinare OpenComputo in Applicazioni. Al primo avvio,
   se macOS avvisa che lo sviluppatore non è verificato: clic destro sull'applicazione →
   *Apri*.
-* **Windows**: eseguire l'installer `-setup.exe` (o il `.msi`). Se compare *Windows ha
-  protetto il PC*: *Ulteriori informazioni* → *Esegui comunque*.
+* **Windows**: eseguire l'installer `-setup.exe`, che installa per il solo utente e non
+  chiede privilegi di amministratore (il `.msi` installa per tutti e li chiede). In
+  alternativa `OpenComputo-portatile-x64.exe` si avvia senza installazione, da qualsiasi
+  cartella. Se compare *Windows ha protetto il PC*: *Ulteriori informazioni* → *Esegui
+  comunque*.
 * **Linux**: `sudo apt install ./OpenComputo_…_amd64.deb` (o il `.rpm`).
 * **Dai sorgenti**: `cargo run -p opencomputo-gui --release` (vedi README).
 
