@@ -152,6 +152,19 @@ impl Carattere {
         }
     }
 
+    /// Famiglia e peso per l'anteprima: caratteri con le stesse metriche di quelli
+    /// standard del PDF, tra quelli di solito installati.
+    fn css(self) -> (&'static str, &'static str) {
+        const TIMES: &str = "Times New Roman, Times, Liberation Serif, Nimbus Roman, serif";
+        const ARIAL: &str = "Helvetica, Arial, Liberation Sans, Nimbus Sans, sans-serif";
+        match self {
+            Self::Times => (TIMES, "normal"),
+            Self::TimesGrassetto => (TIMES, "bold"),
+            Self::Arial => (ARIAL, "normal"),
+            Self::ArialGrassetto => (ARIAL, "bold"),
+        }
+    }
+
     /// Discendente in millesimi di em (dalle metriche AFM).
     fn discesa(self) -> i64 {
         match self {
@@ -234,10 +247,45 @@ fn numero(v: Decimal, decimali: u32) -> String {
 // ---------------------------------------------------------------------------
 // Disegno.
 
-/// Contenuto di una pagina.
+/// Colore PDF (`r g b` tra 0 e 1) in notazione CSS, per l'anteprima.
+fn css(rgb: &str) -> String {
+    let mut canali = rgb.split_whitespace().map(|c| {
+        c.parse::<Decimal>()
+            .ok()
+            .and_then(|d| (d * Decimal::from(255)).round().try_into().ok())
+            .unwrap_or(0u8)
+    });
+    let (r, g, b) = (
+        canali.next().unwrap_or(0),
+        canali.next().unwrap_or(0),
+        canali.next().unwrap_or(0),
+    );
+    format!("#{r:02x}{g:02x}{b:02x}")
+}
+
+/// Testo di un nodo o di un attributo XML.
+fn xml(t: &str) -> String {
+    let mut out = String::with_capacity(t.len());
+    for c in t.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            // Caratteri di controllo: non ammessi in XML.
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Contenuto di una pagina: le operazioni PDF e, in parallelo, lo stesso disegno in SVG
+/// per l'anteprima (stesse coordinate, in punti dall'alto della pagina).
 #[derive(Debug, Default)]
 struct Tela {
     ops: String,
+    svg: String,
     sostituiti: usize,
 }
 
@@ -273,6 +321,22 @@ impl Tela {
             pdf::pt(x),
             pdf::pt(ALTEZZA - base),
             pdf::stringa_pdf(&byte)
+        );
+        // Anteprima: `textLength` fissa la larghezza calcolata con le metriche del PDF,
+        // così l'impaginazione è la stessa anche se il carattere a video è diverso.
+        let spazi = i64::try_from(t.matches(' ').count()).unwrap_or(0);
+        let lunga = larghezza(t, c, corpo) + spazi * spazio;
+        let (famiglia, peso) = c.css();
+        let _ = writeln!(
+            self.svg,
+            "<text x=\"{}\" y=\"{}\" font-family=\"{famiglia}\" font-weight=\"{peso}\" font-size=\"{}\" fill=\"{}\" word-spacing=\"{}\" textLength=\"{}\" lengthAdjust=\"spacingAndGlyphs\" xml:space=\"preserve\">{}</text>",
+            pdf::pt(x),
+            pdf::pt(base),
+            pdf::pt(corpo),
+            css(colore.rgb()),
+            pdf::pt(spazio),
+            pdf::pt(lunga.max(1)),
+            xml(t)
         );
     }
 
@@ -328,6 +392,16 @@ impl Tela {
             pdf::pt(x1),
             pdf::pt(ALTEZZA - y1)
         );
+        let _ = writeln!(
+            self.svg,
+            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"{}\"/>",
+            pdf::pt(x0),
+            pdf::pt(y0),
+            pdf::pt(x1),
+            pdf::pt(y1),
+            css(k.rgb()),
+            pdf::pt(spessore)
+        );
     }
 
     fn orizzontale(&mut self, x0: i64, x1: i64, y: i64, spessore: i64, k: Colore) {
@@ -349,6 +423,16 @@ impl Tela {
             pdf::pt(x1 - x0),
             pdf::pt(y1 - y0)
         );
+        let _ = writeln!(
+            self.svg,
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"/>",
+            pdf::pt(x0),
+            pdf::pt(y0),
+            pdf::pt(x1 - x0),
+            pdf::pt(y1 - y0),
+            css(k.rgb()),
+            pdf::pt(spessore)
+        );
     }
 
     fn riempi(&mut self, (x0, y0): (i64, i64), (x1, y1): (i64, i64), rgb: &str) {
@@ -359,6 +443,15 @@ impl Tela {
             pdf::pt(ALTEZZA - y1),
             pdf::pt(x1 - x0),
             pdf::pt(y1 - y0)
+        );
+        let _ = writeln!(
+            self.svg,
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"/>",
+            pdf::pt(x0),
+            pdf::pt(y0),
+            pdf::pt(x1 - x0),
+            pdf::pt(y1 - y0),
+            css(rgb)
         );
     }
 }
@@ -872,11 +965,22 @@ fn file_pdf(pagine: Vec<Tela>, titolo: &str, comprimi: bool) -> RisultatoPdf {
         titolo,
         comprimi,
     );
+    let numero = contenuti.len();
     RisultatoPdf {
         byte,
-        pagine: contenuti.len(),
+        pagine: numero,
         caratteri_sostituiti: sostituiti,
+        anteprima: pagine.into_iter().map(|t| pagina_svg(&t.svg)).collect(),
     }
+}
+
+/// Pagina dell'anteprima: un documento SVG con le dimensioni della pagina in punti e il
+/// fondo bianco.
+fn pagina_svg(disegno: &str) -> String {
+    let (w, h) = (pdf::pt(LARGHEZZA), pdf::pt(ALTEZZA));
+    format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {w} {h}\" width=\"{w}pt\" height=\"{h}pt\"><rect width=\"{w}\" height=\"{h}\" fill=\"#ffffff\"/>\n{disegno}</svg>"
+    )
 }
 
 #[cfg(test)]

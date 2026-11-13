@@ -747,3 +747,71 @@ fn computo_tradizionale_con_la_sola_incidenza_della_sicurezza() {
         vec!["14´457,12", "225,53", "1,56"]
     );
 }
+
+/// Testi di una pagina SVG dell'anteprima, nell'ordine di disegno.
+fn testi_svg(svg: &str) -> Vec<String> {
+    svg.split("<text ")
+        .skip(1)
+        .map(|t| {
+            let inizio = t.find('>').unwrap() + 1;
+            let fine = t.find("</text>").unwrap();
+            t[inizio..fine]
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replace("&amp;", "&")
+        })
+        .collect()
+}
+
+/// L'anteprima è il PDF: stesse pagine, stessi testi nello stesso ordine, stesso numero di
+/// filetti; un SVG ben formato fatto solo di testo, linee e rettangoli.
+#[test]
+fn anteprima_svg_uguale_al_pdf() {
+    let p = progetto();
+    let id = p.computi[0].id;
+    for r in [
+        tradizionale::computo(&p, id, &opzioni()).unwrap(),
+        tradizionale::elenco_prezzi(&p, &opzioni()),
+    ] {
+        assert_eq!(r.anteprima.len(), r.pagine);
+        let pdf = testi(&r);
+        let contenuti = String::from_utf8_lossy(&r.byte);
+        let mut filetti = 0;
+        for (svg, testi_pdf) in r.anteprima.iter().zip(&pdf) {
+            assert!(svg.starts_with(
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 595.32 841.92\""
+            ));
+            assert!(svg.ends_with("</svg>"));
+            assert_eq!(&testi_svg(svg), testi_pdf);
+            // Solo elementi di disegno: niente script, collegamenti o immagini esterne.
+            for elemento in svg.split('<').skip(1) {
+                let nome = elemento
+                    .split([' ', '>', '/'])
+                    .find(|s| !s.is_empty())
+                    .unwrap();
+                assert!(["svg", "rect", "line", "text"].contains(&nome), "{nome}");
+            }
+            assert!(!svg.contains("href"));
+            filetti += svg.matches("<line ").count() + svg.matches("fill=\"none\"").count();
+        }
+        // Ogni tratto del PDF (`S`) ha il suo elemento nell'anteprima.
+        assert_eq!(filetti, contenuti.matches(" S\n").count());
+    }
+}
+
+/// Testi con caratteri speciali di XML restano testo.
+#[test]
+fn anteprima_svg_con_caratteri_speciali() {
+    let mut p = progetto();
+    p.elenco_prezzi.voci[0].descrizione_breve =
+        "Tubo Ø 20 <prova> & \"altro\" </text><script>".into();
+    p.elenco_prezzi.voci[0].descrizione_estesa = p.elenco_prezzi.voci[0].descrizione_breve.clone();
+    let r = tradizionale::elenco_prezzi(&p, &opzioni());
+    let tutto = r.anteprima.concat();
+    assert!(!tutto.contains("<script") && !tutto.contains("<prova>"));
+    assert!(
+        tutto.contains("&lt;prova&gt; &amp; &quot;altro&quot;"),
+        "testo non trovato"
+    );
+}

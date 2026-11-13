@@ -273,6 +273,11 @@ table.prospetto tr.parziale td { font-weight: 600; }
 /* ------------------------------------------------------------------ anteprima dei report */
 
 .anteprima-sfondo { background: var(--sfondo); flex: 1; overflow: auto; padding: 20px; }
+/* Anteprima del modello tradizionale: le pagine del PDF come immagini. */
+.pagine-stampa { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.pagina-stampa { display: block; width: 100%; max-width: 860px; height: auto; aspect-ratio: 59532 / 84192; background: #fff; box-shadow: var(--ombra); border-radius: 2px; }
+.pagine-conteggio { text-align: center; margin: 0 0 12px; }
+.pagine-altre { display: flex; justify-content: center; padding: 18px 0 6px; }
 .foglio-stampa {
   background: #fff; color: #1a1a1a; max-width: 1060px; margin: 0 auto; padding: 32px 38px;
   box-shadow: var(--ombra); border-radius: 2px; font-size: 11.5px; color-scheme: light;

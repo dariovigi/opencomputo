@@ -163,7 +163,8 @@ export async function mostra(el, parametri) {
       h('input', { type: 'checkbox', name: 'sintetica', checked: locale.sintetica, onchange: (e) => { locale.sintetica = e.target.checked; mostra(el, {}); } })));
   const testoPreferenza = (nome, chiave, segnaposto) => {
     const t = h('textarea', { name: nome, rows: 2, placeholder: segnaposto, value: locale[chiave] });
-    t.addEventListener('change', () => { locale[chiave] = t.value; salvaPreferenza('stampa.' + chiave, t.value); });
+    // Cambia solo l'anteprima: il modulo resta com'è, con il cursore al suo posto.
+    t.addEventListener('change', () => { locale[chiave] = t.value; salvaPreferenza('stampa.' + chiave, t.value); aggiornaAnteprima(); });
     return t;
   };
   const opzioniCrono = locale.tipo === 'cronoprogramma' && h('div', { class: 'modulo', style: { marginTop: '8px' } },
@@ -177,16 +178,16 @@ export async function mostra(el, parametri) {
   const opzioniModello = !gantt() && h('div', { class: 'modulo', style: { marginTop: '8px' } },
     h('h4', { class: 'titoletto' }, 'Modello di stampa'),
     h('label', { class: 'campo spunta', title: 'Impaginazione tradizionale: frontespizio, testata dello studio, riquadro verde; nel computo anche i riporti di pagina' },
-      h('span', null, 'Modello tradizionale (PDF)'),
+      h('span', null, 'Modello tradizionale'),
       h('input', { type: 'checkbox', name: 'tradizionale', checked: locale.tradizionale, onchange: (e) => { locale.tradizionale = e.target.checked; mostra(el, {}); } })),
     tradizionale && [
       locale.tipo === 'computo' && !conAnalisi() && h('label', { class: 'campo spunta' }, h('span', null, 'Senza prezzi (computo metrico)'),
         h('input', { type: 'checkbox', name: 'senza-prezzi', checked: locale.senzaPrezzi, onchange: (e) => { locale.senzaPrezzi = e.target.checked; mostra(el, {}); } })),
       h('label', { class: 'campo spunta' }, h('span', null, 'Frontespizio'),
-        h('input', { type: 'checkbox', name: 'frontespizio', checked: locale.frontespizio, onchange: (e) => { locale.frontespizio = e.target.checked; } })),
+        h('input', { type: 'checkbox', name: 'frontespizio', checked: locale.frontespizio, onchange: (e) => { locale.frontespizio = e.target.checked; mostra(el, {}); } })),
       h('label', { class: 'campo' }, h('span', null, 'Ente (frontespizio)'), testoPreferenza('ente', 'ente', 'Comune di …\nProvincia di …')),
       h('label', { class: 'campo' }, h('span', null, 'Studio tecnico (testata)'), testoPreferenza('studio', 'studio', 'Studio tecnico …\nIndirizzo, telefono, e-mail')),
-      h('p', { class: 'nota' }, 'L\'anteprima mostra i dati; l\'impaginazione tradizionale è nel PDF.'),
+
     ]);
   const selVerbale = locale.tipo === 'nuovi_prezzi' && h('select', { name: 'verbale-report', onchange: (e) => { locale.verbale = e.target.value; mostra(el, {}); } },
     h('option', { value: '', selected: !locale.verbale }, 'Elenco dei nuovi prezzi'),
@@ -259,15 +260,62 @@ export async function mostra(el, parametri) {
 
   sostituisci(el,
     h('div', { class: 'vista-testata' }, h('h2', null, titolo)),
-    h('div', { class: 'vista-corpo pieno' }, h('div', { class: 'dividi', style: { gridTemplateColumns: '290px 1fr' } }, pannello, h('div', { class: 'zona' }, anteprima))));
+    h('div', { class: 'vista-corpo pieno' }, h('div', { class: 'dividi', style: { gridTemplateColumns: '290px minmax(0, 1fr)' } }, pannello, h('div', { class: 'zona' }, anteprima))));
 
-  if (CON_SAL.includes(locale.tipo) && !locale.numero) { sostituisci(anteprima, h('p', { class: 'vuoto' }, 'Nessun SAL.')); return; }
-  try {
-    const a = await chiedi({ richiesta: 'anteprima', report: richiestaReport(), data_stampa: locale.data || null });
-    sostituisci(anteprima, foglio(a));
-  } catch (e) {
-    sostituisci(anteprima, h('div', { class: 'banner errore' }, e.message));
+  await aggiornaAnteprima();
+
+  async function aggiornaAnteprima() {
+    if (CON_SAL.includes(locale.tipo) && !locale.numero) { sostituisci(anteprima, h('p', { class: 'vuoto' }, 'Nessun SAL.')); return; }
+    // Se nel frattempo parte un'altra richiesta, conta solo l'ultima.
+    const giro = (anteprima.dataset.giro = String(Number(anteprima.dataset.giro || 0) + 1));
+    try {
+      const richiesta = { richiesta: 'anteprima', report: richiestaReport(), data_stampa: locale.data || null };
+      const a = await chiedi(richiesta);
+      if (anteprima.dataset.giro !== giro) return;
+      // Modello tradizionale: le pagine del PDF, una immagine per pagina.
+      if (a.pagine) pagineTradizionali(anteprima, a, richiesta);
+      else sostituisci(anteprima, foglio(a));
+    } catch (e) {
+      if (anteprima.dataset.giro === giro) sostituisci(anteprima, h('div', { class: 'banner errore' }, e.message));
+    }
   }
+}
+
+/** Pagine per volta nell'anteprima del modello tradizionale. */
+const PAGINE_PER_VOLTA = 6;
+
+/**
+ * Anteprima del modello tradizionale: le stesse pagine del PDF, in SVG, mostrate come
+ * immagini (un SVG in un'immagine non esegue script né carica risorse). Le pagine
+ * successive si caricano a richiesta.
+ */
+function pagineTradizionali(contenitore, primo, richiesta) {
+  const totale = primo.pagine_totali;
+  const conteggio = h('p', { class: 'nota pagine-conteggio', role: 'status' });
+  const fogli = h('div', { class: 'pagine-stampa' });
+  const altre = h('button', { class: 'pulsante', name: 'altre-pagine' });
+  let mostrate = 0;
+  const aggiungi = (a) => {
+    a.pagine.forEach((svg, i) => fogli.append(h('img', {
+      class: 'pagina-stampa', alt: `Pagina ${a.prima + i} di ${totale}`,
+      src: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg),
+    })));
+    mostrate = a.prima - 1 + a.pagine.length;
+    conteggio.textContent = mostrate < totale
+      ? `Pagine 1–${mostrate} di ${totale}: l'anteprima è quella del PDF.`
+      : `${totale} ${totale === 1 ? 'pagina' : 'pagine'}: l'anteprima è quella del PDF.`;
+    if (mostrate >= totale) altre.remove();
+    else altre.textContent = `Mostra altre ${Math.min(PAGINE_PER_VOLTA, totale - mostrate)} pagine`;
+  };
+  altre.addEventListener('click', async () => {
+    altre.disabled = true;
+    try {
+      aggiungi(await chiedi({ ...richiesta, prima_pagina: mostrate + 1, pagine: PAGINE_PER_VOLTA }));
+    } catch (e) { mostraErrore(e); }
+    altre.disabled = false;
+  });
+  aggiungi(primo);
+  sostituisci(contenitore, conteggio, fogli, h('div', { class: 'pagine-altre' }, altre));
 }
 
 /** Resa HTML del documento di report. */

@@ -377,6 +377,52 @@ fn viste_per_l_interfaccia_grafica() {
         json!({"stile": "totale", "celle": ["IMPORTO DEL PRESENTE SAL", "8.118,60"]})
     );
 
+    // Modello tradizionale: l'anteprima sono le pagine del PDF, a blocchi.
+    let report = json!({"tipo": "computo", "tradizionale": {"ente": "Comune di Esempio"}});
+    let t = chiedi(&mut s, json!({"richiesta": "anteprima", "report": report}));
+    assert_eq!(t["nome"], "computo_tradizionale");
+    let totali = t["pagine_totali"].as_u64().unwrap();
+    assert!(totali >= 2, "{totali}");
+    assert_eq!(t["prima"], 1);
+    let pagine = t["pagine"].as_array().unwrap();
+    assert_eq!(pagine.len() as u64, totali.min(6));
+    assert!(pagine[0].as_str().unwrap().contains("Comune di Esempio"));
+    assert!(
+        pagine[1]
+            .as_str()
+            .unwrap()
+            .contains("DESIGNAZIONE DEI LAVORI")
+    );
+    let seconda = chiedi(
+        &mut s,
+        json!({"richiesta": "anteprima", "report": report, "prima_pagina": 2, "pagine": 1}),
+    );
+    assert_eq!(
+        (
+            seconda["prima"].as_u64(),
+            seconda["pagine"].as_array().unwrap().len()
+        ),
+        (Some(2), 1)
+    );
+    assert_eq!(seconda["pagine"][0], pagine[1]);
+    // Oltre la fine: nessuna pagina, nessun errore; limiti fuori misura ricondotti.
+    let oltre = chiedi(
+        &mut s,
+        json!({"richiesta": "anteprima", "report": report, "prima_pagina": 999, "pagine": 100000}),
+    );
+    assert_eq!(oltre["pagine"], json!([]));
+    let zero = chiedi(
+        &mut s,
+        json!({"richiesta": "anteprima", "report": report, "prima_pagina": 0, "pagine": 0}),
+    );
+    assert_eq!(
+        (
+            zero["prima"].as_u64(),
+            zero["pagine"].as_array().unwrap().len()
+        ),
+        (Some(1), 1)
+    );
+
     // Report su un file esatto; il CSV (più file) lo rifiuta.
     let r = chiedi(
         &mut s,

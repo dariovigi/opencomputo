@@ -110,6 +110,48 @@ test('finestra secondaria stretta (640): le colonne si raggiungono scorrendo, in
   assert.ok(f.scorre);
 });
 
+test('anteprima del modello tradizionale: pagine del PDF, le successive a richiesta', async () => {
+  // Un computo lungo: più pagine di quelle mostrate subito.
+  const voci = Array.from({ length: 70 }, (_, i) => `<VCItem ID="${i + 1}"><IDEP>${(i % 2) + 1}</IDEP><PweVCMisure>${rigo(`parte ${i + 1}`, '2', '3.5', '1.2')}${rigo('altra parte', '1', '2', '')}</PweVCMisure></VCItem>`).join('');
+  const file = path.join(b.cartella, 'lungo.xpwe');
+  await writeFile(file, XPWE.replace(/<PweVociComputo>.*<\/PweVociComputo>/s, `<PweVociComputo>${voci}</PweVociComputo>`));
+  assert.equal((await b.motore({ richiesta: 'importa', origine: file })).ok, true);
+  await p().setViewportSize({ width: 1320, height: 800 });
+  await p().goto(b.indirizzo);
+  await attendi();
+  await vai('Report ed export');
+  await p().waitForSelector('.foglio-stampa');
+  await p().check('input[name=tradizionale]');
+  const caricate = () => p().waitForFunction(() => { const i = [...document.querySelectorAll('img.pagina-stampa')]; return i.length && i.every((x) => x.complete && x.naturalWidth > 0) && !document.querySelector('button[name=altre-pagine]:disabled'); });
+  await caricate();
+  const stato = () => p().evaluate(() => ({ pagine: document.querySelectorAll('img.pagina-stampa').length, testo: document.querySelector('.pagine-conteggio').textContent,
+    pagina: document.documentElement.scrollWidth - document.documentElement.clientWidth, larga: Math.round(document.querySelector('img.pagina-stampa').getBoundingClientRect().width) }));
+  let s = await stato();
+  const totale = Number(/di (\d+)/.exec(s.testo)[1]);
+  assert.ok(totale > 6, `pagine: ${totale}`);
+  assert.equal(s.pagine, 6);
+  assert.equal(s.pagina, 0, 'la pagina esce dalla finestra');
+  assert.ok(s.larga > 500, `pagina larga ${s.larga} px`);
+  while (await p().locator('button[name=altre-pagine]').count()) {
+    const prima = (await stato()).pagine;
+    await p().click('button[name=altre-pagine]');
+    await p().waitForFunction((n) => document.querySelectorAll('img.pagina-stampa').length > n, prima);
+    await caricate();
+  }
+  s = await stato();
+  assert.equal(s.pagine, totale);
+  assert.match(s.testo, new RegExp(`^${totale} pagine`));
+  // L'ultima pagina porta il totale, la penultima il riporto.
+  const ultima = await p().evaluate(() => decodeURIComponent([...document.querySelectorAll('img.pagina-stampa')].at(-1).src));
+  assert.match(ultima, /T O T A L E|TOTALE/);
+  // Finestra stretta: le pagine si rimpiccioliscono, non escono.
+  await p().setViewportSize({ width: 960, height: 700 });
+  await p().waitForTimeout(150);
+  s = await stato();
+  assert.equal(s.pagina, 0);
+  assert.ok(s.larga <= 960 - 290 - 150);
+});
+
 test('nessun errore JavaScript né violazione della Content Security Policy', () => {
   assert.deepEqual(b.errori, []);
 });

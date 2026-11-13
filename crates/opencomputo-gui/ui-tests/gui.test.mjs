@@ -767,6 +767,22 @@ test('report: modello tradizionale del computo e dell\'elenco prezzi', async () 
   await p().locator('textarea[name=ente]').dispatchEvent('change');
   await p().fill('textarea[name=studio]', 'Studio tecnico di prova');
   await p().locator('textarea[name=studio]').dispatchEvent('change');
+  // L'anteprima è quella del PDF: una immagine per pagina, con l'impaginazione
+  // tradizionale, e segue le opzioni (ente sul frontespizio).
+  await p().waitForFunction(() => {
+    const i = [...document.querySelectorAll('img.pagina-stampa')];
+    return i.length > 1 && i.every((x) => x.complete && x.naturalWidth > 0) && decodeURIComponent(i[0].src).includes('Comune di Esempio')
+      && i.some((x) => decodeURIComponent(x.src).includes('Studio tecnico di prova'));
+  });
+  assert.equal(await p().locator('.foglio-stampa').count(), 0);
+  const pagine = await p().evaluate(() => [...document.querySelectorAll('img.pagina-stampa')].map((i) => ({ alt: i.alt, svg: decodeURIComponent(i.src.split(',')[1]), rapporto: i.naturalHeight / i.naturalWidth })));
+  assert.match(pagine[0].alt, /^Pagina 1 di \d+$/);
+  assert.ok(Math.abs(pagine[0].rapporto - 841.92 / 595.32) < 0.01, 'proporzioni A4');
+  assert.match(pagine[1].svg, /DESIGNAZIONE DEI LAVORI/);
+  assert.match(pagine[1].svg, /R I P O R T O/);
+  assert.match(pagine.map((x) => x.svg).join(''), /Studio tecnico di prova/);
+  assert.ok(!/<script|href=|<image|<foreignObject/i.test(pagine.map((x) => x.svg).join('')), 'solo testo e linee');
+  assert.match(await p().locator('.pagine-conteggio').innerText(), /anteprima è quella del PDF/);
   await schermata('21-report-tradizionale');
 
   const computo = path.join(b.cartella, 'computo-tradizionale.pdf');
@@ -823,6 +839,8 @@ test('report: modello tradizionale del computo e dell\'elenco prezzi', async () 
   await p().uncheck('input[name=tradizionale]');
   await attendi();
   assert.ok(!(await p().isDisabled('.dettaglio button:has-text("Excel")')));
+  await p().waitForSelector('.foglio-stampa');
+  assert.equal(await p().locator('img.pagina-stampa').count(), 0);
 
   // Elenco prezzi in DCF (sperimentale).
   await p().click('label:has-text("Elenco prezzi")');

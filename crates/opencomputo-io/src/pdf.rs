@@ -46,6 +46,9 @@ pub struct RisultatoPdf {
     pub pagine: usize,
     /// Caratteri non rappresentabili sostituiti con `?`.
     pub caratteri_sostituiti: usize,
+    /// Le stesse pagine in SVG, per l'anteprima a video: solo per il modello tradizionale
+    /// (vuoto per gli altri documenti).
+    pub anteprima: Vec<String>,
 }
 
 // Misure in centesimi di punto.
@@ -930,6 +933,7 @@ pub fn documento(d: &Documento, o: &OpzioniPdf) -> RisultatoPdf {
         byte: out,
         pagine,
         caratteri_sostituiti: imp.sostituiti,
+        anteprima: Vec::new(),
     }
 }
 

@@ -91,6 +91,20 @@ in punti) e poi confrontate con le stampe prodotte:
    tabelle delle larghezze. La giustificazione usa la spaziatura delle parole del PDF
    (`Tw`).
 
+### Anteprima a video (2026-11-13)
+
+L'anteprima del modello tradizionale è la stampa stessa: ogni primitiva di disegno della
+pagina (testo, linea, rettangolo, riempimento) scrive, oltre all'operazione PDF, lo stesso
+elemento in SVG con le stesse coordinate. Non c'è una seconda impaginazione da tenere
+allineata. Ogni testo porta `textLength` con la larghezza calcolata dalle metriche del
+PDF, così colonne e a capo non dipendono dal carattere disponibile a video. Il servizio
+restituisce le pagine a blocchi (`anteprima` con `prima_pagina` e `pagine`, al massimo 40
+per richiesta); l'interfaccia le mostra come immagini `data:` (un SVG in un'immagine non
+esegue script né carica risorse; la CSP resta invariata). Un test confronta testi e
+filetti dell'SVG con quelli del PDF.
+
+Limite: a ogni blocco di pagine il documento viene impaginato di nuovo per intero.
+
 ## Conseguenze e limiti
 
 * Verificati con le misure delle stampe di riferimento:

@@ -53,7 +53,11 @@ nel repository; i test usano dati sintetici con le stesse caratteristiche.
   finestra (griglie con colonne `1fr`). Corretto, con `ui-tests/finestra.test.mjs`
   (6 test a 1600, 1320, 1100, 960 e 640 px).
 
-Verifica: `cargo test --workspace` 426 test, `npm test` 53, tutti passati su Linux.
+* **Anteprima del modello tradizionale** (ADR 0015): le pagine del PDF in SVG, generate
+  dalle stesse primitive di disegno; test di confronto tra SVG e PDF, test del servizio
+  a blocchi di pagine, test dell'interfaccia con un computo di più di sei pagine.
+
+Verifica: `cargo test --workspace` 428 test, `npm test` 54, tutti passati su Linux.
 
 ## Prestazioni e robustezza dell'assistente AI (2026-11-12)
 

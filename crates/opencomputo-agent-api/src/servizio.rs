@@ -143,6 +143,12 @@ pub enum Richiesta {
         /// Data di stampa a piè di pagina.
         #[serde(default)]
         data_stampa: Option<NaiveDate>,
+        /// Modello tradizionale: prima pagina da restituire (da 1; predefinita 1).
+        #[serde(default)]
+        prima_pagina: Option<usize>,
+        /// Modello tradizionale: quante pagine restituire (predefinite 6, al massimo 40).
+        #[serde(default)]
+        pagine: Option<usize>,
     },
     /// Dati generali: metadati, contratto, regole, categorie, WBS, capitoli, computi.
     Progetto {},
@@ -843,7 +849,19 @@ impl Servizio {
             Richiesta::Anteprima {
                 report,
                 data_stampa,
+                prima_pagina,
+                pagine,
             } => {
+                // Modello tradizionale: le pagine del PDF, in SVG.
+                if let Some(a) = casi_uso::anteprima_tradizionale(
+                    self.aperta()?.progetto(),
+                    &report,
+                    &OpzioniReport { data_stampa },
+                    prima_pagina.unwrap_or(1),
+                    pagine.unwrap_or(6).clamp(1, 40),
+                )? {
+                    return Ok(valore(&a));
+                }
                 let (nome, doc) = casi_uso::documento(
                     self.aperta()?.progetto(),
                     &report,

@@ -757,5 +757,6 @@ pub fn gantt(p: &Progetto, o: &OpzioniGantt) -> Result<RisultatoPdf, ErroreRepor
         byte,
         pagine: pagine.len(),
         caratteri_sostituiti: sostituiti,
+        anteprima: Vec::new(),
     })
 }

@@ -9,6 +9,9 @@ Prima versione: tutte le fasi di sviluppo 1–6. Dettagli in `docs/STATO.md`.
 
 ### Aggiunto (2026-11-13)
 
+* Report: con il **modello tradizionale** l'anteprima mostra le pagine del PDF con la
+  stessa impaginazione (prima mostrava la tabella del modello ordinario). Richiesta
+  `anteprima` con `prima_pagina` e `pagine` (ADR 0015).
 * Import XPWE: le **analisi dei prezzi** entrano come analisi di OpenComputo collegate
   alle voci. Spese generali, utile e tipo dei componenti, che il file non contiene, sono
   dedotti dal prezzo e dalle incidenze dichiarati e riportati nel riepilogo dell'import;

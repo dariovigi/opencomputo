@@ -638,7 +638,7 @@ fn report_tradizionale(
     tipo: &TipoReport,
     formato: FormatoReport,
     o: &OpzioniReport,
-) -> Result<Option<FileReport>, ErroreApplicazione> {
+) -> Result<Option<(String, pdf::RisultatoPdf)>, ErroreApplicazione> {
     let richiesta = |messaggio: &str| ErroreApplicazione::Richiesta {
         messaggio: messaggio.to_owned(),
     };
@@ -669,17 +669,15 @@ fn report_tradizionale(
                 incidenze: incidenze.in_report(),
                 ..opzioni
             };
-            FileReport {
-                nome: format!("{base}.pdf"),
-                byte: tradizionale::computo(p, id, &opzioni)
-                    .map_err(errore_export)?
-                    .byte,
-            }
+            (
+                base.to_owned(),
+                tradizionale::computo(p, id, &opzioni).map_err(errore_export)?,
+            )
         }
-        TipoReport::ElencoPrezzi { .. } => FileReport {
-            nome: "elenco_prezzi_tradizionale.pdf".into(),
-            byte: tradizionale::elenco_prezzi(p, &opzioni).byte,
-        },
+        TipoReport::ElencoPrezzi { .. } => (
+            "elenco_prezzi_tradizionale".to_owned(),
+            tradizionale::elenco_prezzi(p, &opzioni),
+        ),
         _ => {
             if stampa.senza_prezzi {
                 return Err(richiesta(
@@ -691,11 +689,54 @@ fn report_tradizionale(
                 firma: firma(p, tipo),
                 ..opzioni
             };
-            FileReport {
-                nome: format!("{base}_tradizionale.pdf"),
-                byte: tradizionale::documento(p, &doc, &doc.titolo, &opzioni).byte,
-            }
+            (
+                format!("{base}_tradizionale"),
+                tradizionale::documento(p, &doc, &doc.titolo, &opzioni),
+            )
         }
+    }))
+}
+
+/// Pagine dell'anteprima nel modello tradizionale: le stesse del PDF, in SVG.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct AnteprimaPagine {
+    /// Nome del documento (senza estensione).
+    pub nome: String,
+    /// Numero di pagine del documento.
+    pub pagine_totali: usize,
+    /// Numero (da 1) della prima pagina restituita.
+    pub prima: usize,
+    /// Pagine restituite, ognuna un documento SVG.
+    pub pagine: Vec<String>,
+}
+
+/// Anteprima del report nel modello tradizionale, se il report lo richiede: le pagine
+/// sono quelle del PDF (stessa impaginazione, stessi valori). Restituisce al massimo
+/// `quante` pagine a partire dalla numero `prima` (da 1).
+///
+/// # Errors
+/// Come [`report`].
+pub fn anteprima_tradizionale(
+    p: &Progetto,
+    tipo: &TipoReport,
+    o: &OpzioniReport,
+    prima: usize,
+    quante: usize,
+) -> Result<Option<AnteprimaPagine>, ErroreApplicazione> {
+    let Some((nome, r)) = report_tradizionale(p, tipo, FormatoReport::Pdf, o)? else {
+        return Ok(None);
+    };
+    let prima = prima.max(1);
+    Ok(Some(AnteprimaPagine {
+        nome,
+        pagine_totali: r.pagine,
+        prima,
+        pagine: r
+            .anteprima
+            .into_iter()
+            .skip(prima - 1)
+            .take(quante)
+            .collect(),
     }))
 }
 
@@ -729,8 +770,11 @@ pub fn report(
                 .byte,
         }]);
     }
-    if let Some(f) = report_tradizionale(p, tipo, formato, o)? {
-        return Ok(vec![f]);
+    if let Some((nome, r)) = report_tradizionale(p, tipo, formato, o)? {
+        return Ok(vec![FileReport {
+            nome: format!("{nome}.pdf"),
+            byte: r.byte,
+        }]);
     }
     let (base, doc) = documento(p, tipo, o)?;
     Ok(match formato {

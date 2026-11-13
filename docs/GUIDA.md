@@ -652,7 +652,11 @@ Nel computo le descrizioni oltre i 300 caratteri sono ridotte all'inizio e alla 
 separati da « ... »; dalla CLI `--descrizioni-complete` le stampa per intero.
 
 Il modello tradizionale è solo PDF: XLSX e CSV restano disponibili con il modello
-ordinario. L'anteprima mostra gli stessi dati nel documento ordinario.
+ordinario. Con il modello tradizionale **l'anteprima mostra le pagine del PDF**, con la
+stessa impaginazione (frontespizio, riquadro verde, riporti): le prime sei subito, le
+altre con «Mostra altre pagine». L'anteprima si aggiorna cambiando le opzioni, l'ente e
+lo studio. A video il carattere può essere leggermente diverso da quello del PDF (dipende
+da quelli installati), ma righe, colonne e a capo sono gli stessi.
 
 **Altri documenti** (ADR 0023). La casella c'è per tutti i documenti: libretto,
 registro, SAL, certificato di pagamento, sommario, conto finale, analisi dei prezzi,
