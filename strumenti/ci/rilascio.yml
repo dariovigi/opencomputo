@@ -42,7 +42,8 @@ jobs:
           # Avviato a mano (senza tag) costruisce soltanto: i file si scaricano dalla
           # pagina dell'esecuzione, senza creare una release.
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: OpenComputo ${{ github.ref_name }}
+          # Nome e tag vanno dati insieme o per niente: l'azione rifiuta l'uno senza l'altro.
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('OpenComputo {0}', github.ref_name) || '' }}
           releaseBody: Pacchetti non firmati. Vedi CHANGELOG.md e docs/GUIDA.md.
           releaseDraft: true
           args: ${{ matrix.argomenti }}
