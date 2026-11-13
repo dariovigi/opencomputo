@@ -123,6 +123,9 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 .vista-corpo.pieno { padding: 0; overflow: hidden; display: flex; }
 .dividi { display: grid; grid-template-columns: minmax(0, 1fr) 320px; flex: 1; min-height: 0; }
 .dividi.senza-dettaglio { grid-template-columns: minmax(0, 1fr); }
+/* Pannello delle opzioni a sinistra del contenuto (report): resta a fianco e a tutta
+   altezza anche nelle finestre strette. */
+.dividi.pannello-a-sinistra { grid-template-columns: 290px minmax(0, 1fr); }
 .dividi.senza-dettaglio > .dettaglio { display: none; }
 .dividi > * { min-height: 0; min-width: 0; }
 .dividi.verticale { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
@@ -696,8 +699,8 @@ table.crono-legami, table.crono-mesi { border-collapse: collapse; width: 100%; f
 /* Sotto questa larghezza il pannello di dettaglio passa sotto la tabella invece che a
    fianco: le colonne dei numeri restano visibili senza scorrere in orizzontale. */
 @media (max-width: 1450px) {
-  .dividi:not(.senza-dettaglio):not(.verticale) { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-  .dividi:not(.senza-dettaglio):not(.verticale) > .dettaglio { border-left: 0; border-top: 1px solid var(--bordo); max-height: 32vh; }
+  .dividi:not(.senza-dettaglio):not(.verticale):not(.pannello-a-sinistra) { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .dividi:not(.senza-dettaglio):not(.verticale):not(.pannello-a-sinistra) > .dettaglio { border-left: 0; border-top: 1px solid var(--bordo); max-height: 32vh; }
 }
 /* Colonne dei numeri più compatte e barra laterale più stretta. */
 @media (max-width: 1250px) {
@@ -713,6 +716,7 @@ table.crono-legami, table.crono-mesi { border-collapse: collapse; width: 100%; f
   table.misure col.c-importo { width: 92px; }
   table.misure td.c-codice { font-size: 11px; }
   .con-filtri { grid-template-columns: 230px minmax(0, 1fr); }
+  .dividi.pannello-a-sinistra { grid-template-columns: 250px minmax(0, 1fr); }
 }
 @media (max-width: 900px) {
   .corpo { grid-template-columns: 150px minmax(0, 1fr); }

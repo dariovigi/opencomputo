@@ -260,7 +260,7 @@ export async function mostra(el, parametri) {
 
   sostituisci(el,
     h('div', { class: 'vista-testata' }, h('h2', null, titolo)),
-    h('div', { class: 'vista-corpo pieno' }, h('div', { class: 'dividi', style: { gridTemplateColumns: '290px minmax(0, 1fr)' } }, pannello, h('div', { class: 'zona' }, anteprima))));
+    h('div', { class: 'vista-corpo pieno' }, h('div', { class: 'dividi pannello-a-sinistra' }, pannello, h('div', { class: 'zona' }, anteprima))));
 
   await aggiornaAnteprima();
 

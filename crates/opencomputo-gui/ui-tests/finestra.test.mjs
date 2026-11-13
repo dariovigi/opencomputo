@@ -75,6 +75,21 @@ for (const larghezza of [1600, 1320, 1100, 960]) {
     const salva = await p().locator('.barra button', { hasText: 'Salva' }).first().boundingBox();
     assert.ok(salva && salva.x + salva.width <= larghezza, 'pulsante Salva fuori dalla finestra');
 
+    // Report: il pannello delle opzioni resta a sinistra, alto quanto la vista, con il
+    // pulsante del PDF raggiungibile.
+    await vai('Report ed export');
+    const r = await p().evaluate(() => {
+      const q = (s) => document.querySelector(s).getBoundingClientRect();
+      const pannello = q('.dividi > aside.dettaglio'); const zona = q('.dividi > .zona'); const corpo = q('.vista-corpo');
+      return { alto: Math.round(pannello.height), corpo: Math.round(corpo.height), fianco: pannello.right <= zona.left + 1, larga: Math.round(pannello.width), pagina: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+    });
+    assert.ok(r.fianco, 'il pannello non è a fianco dell\'anteprima');
+    assert.ok(r.alto >= r.corpo - 2, `pannello alto ${r.alto} px su ${r.corpo}`);
+    assert.ok(r.larga >= 250);
+    assert.equal(r.pagina, 0);
+    await p().locator('.dettaglio button', { hasText: 'PDF…' }).scrollIntoViewIfNeeded();
+    assert.ok(await p().locator('.dettaglio button', { hasText: 'PDF…' }).isVisible());
+
     await vai('Elenco prezzi');
     m = await misure('.griglia-intestazione .cella', ['Prezzo', 'M.O.']);
     assert.equal(m.pagina, m.finestra);

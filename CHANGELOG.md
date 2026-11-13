@@ -23,6 +23,9 @@ Prima versione: tutte le fasi di sviluppo 1–6. Dettagli in `docs/STATO.md`.
 
 ### Corretto (finestra e XPWE, 2026-11-13)
 
+* Report ed export: nelle finestre sotto 1450 px il pannello delle opzioni a sinistra
+  restava alto un terzo della vista (effetto della regola che sposta sotto il pannello
+  di dettaglio). Ora è sempre a tutta altezza.
 * Ridimensionamento della finestra: con un titolo dei lavori lungo la pagina diventava
   più larga della finestra e le colonne di quantità, prezzo e importo non si vedevano,
   a qualsiasi larghezza. Ora la pagina segue sempre la finestra.
