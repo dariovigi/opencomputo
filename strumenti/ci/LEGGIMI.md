@@ -1,11 +1,11 @@
 # Workflow di GitHub Actions
 
-`ci.yml` (verifiche a ogni push) e `rilascio.yml` (pacchetti a ogni tag `v*`). Vanno
-copiati in `.github/workflows/` quando il repository viene pubblicato su GitHub:
+`ci.yml` (verifiche a ogni push su `main`) e `rilascio.yml` (pacchetti a ogni tag `v*`).
+Dal 2026-11-13 le copie attive sono in `.github/workflows/`: questa cartella resta come
+copia di lavoro. Dopo una modifica, riallinearle:
 
 ```sh
-mkdir -p .github/workflows && cp strumenti/ci/*.yml .github/workflows/
+cp strumenti/ci/*.yml .github/workflows/
 ```
 
-Sono tenuti qui perché la cartella `.github/workflows` non è scrivibile dagli strumenti
-remoti usati durante lo sviluppo. Decisioni in `docs/adr/0010-rilascio-e-dipendenze.md`.
+Decisioni in `docs/adr/0010-rilascio-e-dipendenze.md`; pubblicazione in `docs/RILASCIO.md`.

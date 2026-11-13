@@ -1,0 +1,46 @@
+# Pacchetti installabili per macOS, Windows e Linux a ogni tag `v*`, allegati a una
+# release in bozza. I pacchetti non sono firmati: firma e notarizzazione richiedono
+# certificati del titolare (vedi docs/RILASCIO.md).
+name: Rilascio
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pacchetti:
+    name: Pacchetti (${{ matrix.piattaforma }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - piattaforma: macos-latest
+            argomenti: --target universal-apple-darwin
+          - piattaforma: windows-latest
+            argomenti: ''
+          - piattaforma: ubuntu-22.04
+            argomenti: ''
+    runs-on: ${{ matrix.piattaforma }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.piattaforma == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - name: Librerie di sistema (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev libayatana-appindicator3-dev patchelf
+      - uses: Swatinem/rust-cache@v2
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: crates/opencomputo-gui
+          tagName: ${{ github.ref_name }}
+          releaseName: OpenComputo ${{ github.ref_name }}
+          releaseBody: Pacchetti non firmati. Vedi CHANGELOG.md e docs/GUIDA.md.
+          releaseDraft: true
+          args: ${{ matrix.argomenti }}

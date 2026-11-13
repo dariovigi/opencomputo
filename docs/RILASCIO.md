@@ -40,6 +40,26 @@ Il workflow `rilascio.yml` (in `strumenti/ci/`, da copiare in `.github/workflows
 `v*` (es. `git tag v0.2.0 && git push --tags`) e li allega a una release in bozza da
 controllare prima di pubblicarla.
 
+## Pubblicare su GitHub e ottenere i pacchetti
+
+1. Creare su github.com un repository vuoto (senza README né licenza).
+2. Dal computer con il progetto:
+
+   ```sh
+   git remote add origin https://github.com/UTENTE/opencomputo.git
+   git push -u origin main
+   git push origin v0.1.0
+   ```
+
+3. Il tag avvia il workflow «Rilascio» (scheda *Actions*): una ventina di minuti dopo,
+   in *Releases* c'è una **bozza** con i pacchetti dei tre sistemi; per Windows
+   `OpenComputo_0.1.0_x64-setup.exe` e `OpenComputo_0.1.0_x64_it-IT.msi` (i nomi esatti li
+   decide Tauri). Controllarli e premere *Publish release*.
+4. Per una versione successiva: aggiornare la versione (vedi sopra), poi
+   `git tag v0.2.0 && git push origin main v0.2.0`.
+
+Il workflow si può anche avviare a mano da *Actions → Rilascio → Run workflow*.
+
 ## Pacchetti non firmati
 
 I pacchetti attuali non sono firmati:
