@@ -27,7 +27,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Compilatore fissato alla versione con cui il progetto è verificato: una versione
+      # più nuova può aggiungere controlli che fanno fallire `-D warnings`. Si aggiorna
+      # qui dopo aver provato in locale.
+      - uses: dtolnay/rust-toolchain@1.97.0
         with:
           components: clippy, rustfmt
       - name: Librerie di sistema per la GUI (Linux)
@@ -64,7 +67,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Compilatore fissato alla versione con cui il progetto è verificato: una versione
+      # più nuova può aggiungere controlli che fanno fallire `-D warnings`. Si aggiorna
+      # qui dopo aver provato in locale.
+      - uses: dtolnay/rust-toolchain@1.97.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p opencomputo-agent-api --features banco-di-prova
       - uses: actions/setup-node@v4
