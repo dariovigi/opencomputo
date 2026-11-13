@@ -1,5 +1,8 @@
 # Verifiche a ogni push e pull request: formattazione, clippy, test Rust su tre sistemi,
 # catena di fornitura (cargo deny), test end-to-end dell'interfaccia.
+#
+# Linux è fissato a Ubuntu 24.04 e non a `ubuntu-latest`: la versione di Playwright usata
+# dai test dell'interfaccia installa Chromium solo sulle versioni di Ubuntu che conosce.
 name: CI
 
 on:
@@ -20,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-24.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +44,7 @@ jobs:
 
   msrv:
     name: Versione minima di Rust (1.88)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88
@@ -51,14 +54,14 @@ jobs:
 
   deny:
     name: Catena di fornitura (cargo deny)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
 
   interfaccia:
     name: Test end-to-end dell'interfaccia
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
