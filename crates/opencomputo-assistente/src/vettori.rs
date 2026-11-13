@@ -413,8 +413,8 @@ impl IndiceVettoriale {
             let impronta = l.array::<32>()?;
             l.riempi(&mut riga)?;
             let mut vettore = Vec::with_capacity(dim);
-            for b in riga.chunks_exact(4) {
-                let x = f32::from_le_bytes(b.try_into().unwrap_or([0; 4]));
+            for b in riga.as_chunks::<4>().0 {
+                let x = f32::from_le_bytes(*b);
                 if !x.is_finite() {
                     return Err(ErroreIndice::NonValido("valore non finito".into()));
                 }
@@ -586,9 +586,8 @@ mod calcolo {
         // mobile da solo, e così il ciclo si vettorizza. L'ordine resta fisso, quindi il
         // risultato è lo stesso su ogni macchina.
         let mut s = [0.0f64; 4];
-        let (ca, cb) = (a.chunks_exact(4), b.chunks_exact(4));
-        let (ra, rb) = (ca.remainder(), cb.remainder());
-        for (x, y) in ca.zip(cb) {
+        let ((ca, ra), (cb, rb)) = (a.as_chunks::<4>(), b.as_chunks::<4>());
+        for (x, y) in ca.iter().zip(cb) {
             for ((acc, x), y) in s.iter_mut().zip(x).zip(y) {
                 *acc += f64::from(*x) * f64::from(*y);
             }
