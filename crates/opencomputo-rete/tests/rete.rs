@@ -145,7 +145,9 @@ fn tempo_scaduto_e_connessione_rifiutata() {
     assert_eq!(e, ErroreTrasporto::Timeout);
     assert!(inizio.elapsed() < Duration::from_secs(2));
 
-    // Porta chiusa: nessuno in ascolto.
+    // Porta chiusa: nessuno in ascolto. Su Linux il rifiuto è immediato; Windows ritenta
+    // la connessione per circa due secondi prima di arrendersi, quindi il tempo massimo
+    // deve restare ben sopra, altrimenti l'esito è «tempo scaduto».
     let porta = TcpListener::bind("127.0.0.1:0")
         .unwrap()
         .local_addr()
@@ -154,7 +156,7 @@ fn tempo_scaduto_e_connessione_rifiutata() {
     let e = t
         .invia(&richiesta(
             &format!("http://127.0.0.1:{porta}/"),
-            Duration::from_secs(2),
+            Duration::from_secs(15),
         ))
         .unwrap_err();
     assert!(matches!(e, ErroreTrasporto::Connessione(_)), "{e:?}");

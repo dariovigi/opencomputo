@@ -43,7 +43,8 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Test
-        run: cargo test --workspace
+        # Tutti i test anche dopo un fallimento: si vedono tutti i problemi in una volta.
+        run: cargo test --workspace --no-fail-fast
 
   msrv:
     name: Versione minima di Rust (1.88)
