@@ -1,0 +1,18 @@
+# Ritorni a capo: sempre LF, su ogni sistema. Su Windows Git convertirebbe i file di
+# testo in CRLF al checkout, e le fixture (JSON, XPWE, CSV) confrontate byte per byte
+# dai test non coinciderebbero più. I file binari sono riconosciuti da Git e lasciati
+# come sono.
+* text=auto eol=lf
+
+# Binari espliciti (niente conversioni, niente diff testuali).
+*.png binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.dcf binary
+*.ocp binary
+
+# Fixture con CRLF di proposito, da non toccare: un export reale di PriMus e il listino
+# che prova la lettura dei ritorni a capo di Windows.
+crates/opencomputo-format-xpwe/tests/fixtures/primus_dcf_5_01_vuoto.xpwe -text
+crates/opencomputo-format-listino/tests/fixtures/listino_esempio.csv -text
