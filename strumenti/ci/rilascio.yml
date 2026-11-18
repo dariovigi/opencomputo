@@ -56,15 +56,36 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: cp target/release/opencomputo-gui.exe OpenComputo-portatile-x64.exe
-      - name: File per Windows tra quelli dell'esecuzione
+      # Pacchetti di ogni sistema tra i file dell'esecuzione: avviato a mano non c'è una
+      # release, e questo è l'unico posto da cui scaricarli. `error` rende rosso il job se
+      # un pacchetto manca, invece di finire verde a mani vuote.
+      - name: Pacchetti Windows tra i file dell'esecuzione
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: OpenComputo-windows-x64
+          if-no-files-found: error
           path: |
             OpenComputo-portatile-x64.exe
             target/release/bundle/nsis/*.exe
             target/release/bundle/msi/*.msi
+      - name: Pacchetti macOS tra i file dell'esecuzione
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenComputo-macos-universale
+          if-no-files-found: error
+          path: target/universal-apple-darwin/release/bundle/dmg/*.dmg
+      - name: Pacchetti Linux tra i file dell'esecuzione
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenComputo-linux-x64
+          if-no-files-found: error
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/rpm/*.rpm
+            target/release/bundle/appimage/*.AppImage
       - name: Eseguibile portatile nella release
         if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/')
         shell: bash

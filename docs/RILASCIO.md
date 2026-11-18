@@ -58,7 +58,10 @@ controllare prima di pubblicarla.
 4. Per una versione successiva: aggiornare la versione (vedi sopra), poi
    `git tag v0.2.0 && git push origin main v0.2.0`.
 
-Il workflow si può anche avviare a mano da *Actions → Rilascio → Run workflow*.
+Il workflow si può anche avviare a mano da *Actions → Rilascio → Run workflow*: in quel
+caso non crea una release, e i pacchetti dei tre sistemi si scaricano in fondo alla
+pagina dell'esecuzione, alla voce *Artifacts* (`OpenComputo-windows-x64`,
+`OpenComputo-macos-universale`, `OpenComputo-linux-x64`).
 
 ### Windows senza privilegi di amministratore
 
