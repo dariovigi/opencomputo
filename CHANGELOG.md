@@ -3,9 +3,12 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/); versioni
 secondo il versionamento semantico.
 
-## [0.1.0] — non ancora pubblicata
+## [0.1.2] — 2026-11-18
 
-Prima versione: tutte le fasi di sviluppo 1–6. Dettagli in `docs/STATO.md`.
+Prima versione con i pacchetti per Windows, macOS e Linux, non firmati. I tag `v0.1.0`
+e `v0.1.1` sono serviti a provare il workflow di rilascio: questa sezione raccoglie
+tutto il lavoro fino a oggi: le fasi di sviluppo 1–6 e quanto segue. Dettagli in
+`docs/STATO.md`.
 
 ### Dipendenze (2026-11-18)
 
