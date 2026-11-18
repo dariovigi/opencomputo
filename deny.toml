@@ -18,6 +18,11 @@ ignore = [
   { id = "RUSTSEC-2025-0081", reason = "unic-char-property: usato da urlpattern in tauri-utils" },
   { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version: usato da urlpattern in tauri-utils" },
   { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident: usato da urlpattern in tauri-utils" },
+  # Dipendenza diretta, non di Tauri: date di contabilità, SAL, cronoprogramma e formati.
+  # Segnalato non mantenuto il 2026-09-14, senza vulnerabilità note; l'avviso raccomanda
+  # jiff o time. Sostituzione da pianificare (tocca la serializzazione delle date: i
+  # progetti salvati devono restare leggibili). Da rivedere se compare una vulnerabilità.
+  { id = "RUSTSEC-2026-0543", reason = "chrono: date del modello; nessuna vulnerabilità nota, sostituzione con jiff da pianificare" },
 ]
 
 [licenses]

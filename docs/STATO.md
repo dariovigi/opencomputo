@@ -124,6 +124,12 @@ in condizioni reali.
 Totali: `cargo test --workspace` 414 test, `npm test` 47, `npm run vera` 5;
 `cargo clippy` (con e senza `--all-features`) e `cargo deny check` puliti.
 
+### Dipendenze (2026-11-18)
+
+`chrono` è segnalato non mantenuto (RUSTSEC-2026-0543, nessuna vulnerabilità): eccezione
+motivata in `deny.toml`. Da pianificare la sostituzione con `jiff`, verificando che le
+date dei progetti salvati (fixture v1–v7) restino leggibili.
+
 ### Non verificato
 
 * Chiamate reali a OpenAI e Anthropic (i test usano solo server locali).
