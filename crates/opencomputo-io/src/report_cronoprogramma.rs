@@ -4,10 +4,11 @@
 //! Date, durate, margini, legami e importi sono quelli del piano calcolato dal core
 //! (ADR 0007): il diagramma li disegna senza ricalcolarli.
 
+use opencomputo_core::data::data_amg;
 use std::fmt::Write as _;
 
-use chrono::{Datelike, Duration, NaiveDate};
 use opencomputo_core::cronoprogramma::{self, Piano, RigaPiano, TipoLegame};
+use opencomputo_core::data::{Date, OperazioniData};
 use opencomputo_core::progetto::Progetto;
 use rust_decimal::Decimal;
 
@@ -342,7 +343,7 @@ impl Pagina {
 #[derive(Debug, Clone, Default)]
 pub struct OpzioniGantt {
     /// Data di stampa.
-    pub data_stampa: Option<NaiveDate>,
+    pub data_stampa: Option<Date>,
     /// Evidenzia il percorso critico (barre rosse).
     pub percorso_critico: bool,
     /// Disegna la linea di base sotto le barre.
@@ -382,17 +383,16 @@ pub fn gantt(p: &Progetto, o: &OpzioniGantt) -> Result<RisultatoPdf, ErroreRepor
         .min()
         .unwrap_or(piano.inizio)
         .min(piano.inizio);
-    let origine =
-        NaiveDate::from_ymd_opt(base_inizio.year(), base_inizio.month(), 1).unwrap_or(base_inizio);
-    let (a, m) = if base_fine.month() == 12 {
-        (base_fine.year() + 1, 1)
+    let origine = data_amg(base_inizio.anno(), base_inizio.mese(), 1).unwrap_or(base_inizio);
+    let (a, m) = if base_fine.mese() == 12 {
+        (base_fine.anno() + 1, 1)
     } else {
-        (base_fine.year(), base_fine.month() + 1)
+        (base_fine.anno(), base_fine.mese() + 1)
     };
-    let termine = NaiveDate::from_ymd_opt(a, m, 1).unwrap_or(base_fine);
-    let giorni = (termine - origine).num_days().max(1);
-    let x_di = |d: NaiveDate| x_grafico + (d - origine).num_days() * (x_fine - x_grafico) / giorni;
-    let x_fine_di = |d: NaiveDate| x_di(d + Duration::days(1));
+    let termine = data_amg(a, m, 1).unwrap_or(base_fine);
+    let giorni = termine.giorni_da(origine).max(1);
+    let x_di = |d: Date| x_grafico + d.giorni_da(origine) * (x_fine - x_grafico) / giorni;
+    let x_fine_di = |d: Date| x_di(d.piu_giorni(1).unwrap_or(d));
     let passo_giorno = (x_fine - x_grafico) / giorni;
 
     let righe = &piano.righe;
@@ -459,16 +459,16 @@ pub fn gantt(p: &Progetto, o: &OpzioniGantt) -> Result<RisultatoPdf, ErroreRepor
         // Mesi (riga alta) e giorni o settimane (riga bassa).
         let mut d = origine;
         while d < termine {
-            let (a2, m2) = if d.month() == 12 {
-                (d.year() + 1, 1)
+            let (a2, m2) = if d.mese() == 12 {
+                (d.anno() + 1, 1)
             } else {
-                (d.year(), d.month() + 1)
+                (d.anno(), d.mese() + 1)
             };
-            let fine_mese = NaiveDate::from_ymd_opt(a2, m2, 1).unwrap_or(termine);
+            let fine_mese = data_amg(a2, m2, 1).unwrap_or(termine);
             let x0 = x_di(d);
             let x1 = x_di(fine_mese);
             pg.linea(&[(x0, y_testata), (x0, y_fondo)], 20, LINEA);
-            let etichetta = format!("{} {}", nome_mese(d.month()), d.year());
+            let etichetta = format!("{} {}", nome_mese(d.mese()), d.anno());
             let etichetta = adatta(&etichetta, true, CORPO, x1 - x0 - 200);
             pg.testo(x0 + 150, y_testata + 900, &etichetta, true, CORPO, NERO);
             d = fine_mese;
@@ -479,24 +479,26 @@ pub fn gantt(p: &Progetto, o: &OpzioniGantt) -> Result<RisultatoPdf, ErroreRepor
                 pg.testo(
                     x_di(d) + 40,
                     y_testata + 2_050,
-                    &d.day().to_string(),
+                    &d.giorno().to_string(),
                     false,
                     550,
                     GRIGIO,
                 );
-                d += Duration::days(1);
+                let Some(dopo) = d.piu_giorni(1) else { break };
+                d = dopo;
             }
         } else {
             let mut d = origine;
-            while d.weekday() != chrono::Weekday::Mon {
-                d += Duration::days(1);
+            while d.giorno_settimana() != 0 {
+                let Some(dopo) = d.piu_giorni(1) else { break };
+                d = dopo;
             }
             while d < termine {
                 if passo_giorno * 7 >= 900 {
                     pg.testo(
                         x_di(d) + 40,
                         y_testata + 2_050,
-                        &d.day().to_string(),
+                        &d.giorno().to_string(),
                         false,
                         550,
                         GRIGIO,
@@ -510,7 +512,8 @@ pub fn gantt(p: &Progetto, o: &OpzioniGantt) -> Result<RisultatoPdf, ErroreRepor
                     10,
                     LINEA,
                 );
-                d += Duration::days(7);
+                let Some(dopo) = d.piu_giorni(7) else { break };
+                d = dopo;
             }
         }
         pg.linea(

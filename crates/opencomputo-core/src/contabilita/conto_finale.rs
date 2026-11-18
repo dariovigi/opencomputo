@@ -36,7 +36,7 @@
 //!
 //! I termini sono verificati dalla validazione come avvisi: il programma non li impone.
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
 use super::sal::{ParametriContabili, StatoSal};
@@ -74,10 +74,10 @@ pub struct Collaudo {
     /// Tipo.
     pub tipo: TipoCollaudo,
     /// Data di emissione del certificato.
-    pub data: NaiveDate,
+    pub data: Date,
     /// Data di approvazione da parte della stazione appaltante.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub approvato_il: Option<NaiveDate>,
+    pub approvato_il: Option<Date>,
 }
 
 /// Riepilogo del conto finale e della rata di saldo.
@@ -127,9 +127,9 @@ pub struct RiepilogoContoFinale {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContoFinale {
     /// Data di ultimazione dei lavori (certificato di ultimazione).
-    pub data_ultimazione: NaiveDate,
+    pub data_ultimazione: Date,
     /// Data del conto finale.
-    pub data: NaiveDate,
+    pub data: Date,
     /// Bozza o emesso.
     pub stato: StatoSal,
     /// Registrazioni dello stato finale (non comprese nei SAL), fissate all'emissione.
@@ -143,7 +143,7 @@ pub struct ContoFinale {
     pub penali: Vec<PenaleId>,
     /// Data della firma dell'esecutore.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub firma_esecutore: Option<NaiveDate>,
+    pub firma_esecutore: Option<Date>,
     /// Riserve confermate dall'esecutore alla firma.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub riserve: Option<String>,
@@ -233,8 +233,8 @@ impl Contabilita {
     /// Contabilità chiusa, SAL in bozza, date incoerenti o nessuna registrazione.
     pub fn redigi_conto_finale(
         &mut self,
-        data_ultimazione: NaiveDate,
-        data: NaiveDate,
+        data_ultimazione: Date,
+        data: Date,
         note: Option<String>,
     ) -> Result<&ContoFinale, ErroreDominio> {
         self.verifica_aperta()?;
@@ -461,7 +461,7 @@ impl Contabilita {
     /// [`Self::calcola_conto_finale`].
     pub fn emetti_conto_finale(
         &mut self,
-        data: NaiveDate,
+        data: Date,
         parametri: &ParametriContabili,
         regole: &RegoleArrotondamento,
     ) -> Result<RiepilogoContoFinale, ErroreDominio> {
@@ -496,7 +496,7 @@ impl Contabilita {
     /// Conto finale assente o non emesso, data anteriore al conto.
     pub fn firma_conto_finale(
         &mut self,
-        data: Option<NaiveDate>,
+        data: Option<Date>,
         riserve: Option<String>,
     ) -> Result<(), ErroreDominio> {
         let conto = self.conto_emesso_mut()?;

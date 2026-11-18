@@ -9,10 +9,11 @@
     missing_docs
 )]
 
+use opencomputo_core::data::OperazioniData;
+use opencomputo_core::data::data_amg;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Instant;
 
-use chrono::NaiveDate;
 use opencomputo_core::id::GeneratoreSequenziale;
 use opencomputo_core::schema::importa_json;
 use opencomputo_dcf_parser::esporta::{OpzioniExport, esporta};
@@ -83,10 +84,7 @@ fn muta(r: &mut Rng, base: &[u8]) -> Vec<u8> {
 fn esplora_dcf() {
     let p = importa_json(FIXTURE).unwrap();
     let o = OpzioniExport {
-        data: NaiveDate::from_ymd_opt(2026, 1, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap(),
+        data: data_amg(2026, 1, 1).unwrap().alle(0, 0, 0).unwrap(),
         versione_programma: "x".into(),
     };
     let base = esporta(&p, &o).unwrap().byte;

@@ -19,7 +19,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use chrono::NaiveDateTime;
+use jiff::civil::DateTime;
 use opencomputo_core::classificazione::Classe;
 use opencomputo_core::id::{CapitoloId, GeneratoreId, VocePrezzarioId};
 use opencomputo_core::numeri::{Percentuale, Prezzo};
@@ -45,7 +45,7 @@ pub struct OpzioniImport {
     /// Nome del file di origine.
     pub nome_file: Option<String>,
     /// Momento dell'importazione.
-    pub importato_il: Option<NaiveDateTime>,
+    pub importato_il: Option<DateTime>,
     /// Nome da dare all'elenco prezzi (altrimenti l'oggetto del documento).
     pub nome_prezzario: Option<String>,
 }

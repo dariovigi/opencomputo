@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use chrono::NaiveDateTime;
+use jiff::civil::DateTime;
 use serde::{Deserialize, Serialize};
 
 use crate::validazione::Gravita;
@@ -60,7 +60,7 @@ pub struct Provenienza {
     pub impronta_sha256: Option<String>,
     /// Momento dell'importazione (ora locale dichiarata dal chiamante).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub importato_il: Option<NaiveDateTime>,
+    pub importato_il: Option<DateTime>,
     /// Identificativo dell'entità nel documento di origine.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identificativo_originale: Option<String>,

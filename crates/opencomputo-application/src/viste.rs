@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use opencomputo_core::aggiornamento::{
     ConfrontoRisorsa, ConfrontoVoce, SostituzionePrefisso, confronta_listino,
 };
@@ -676,7 +676,7 @@ pub struct VistaRegistrazione {
     /// Numero d'ordine.
     pub numero: u32,
     /// Data.
-    pub data: NaiveDate,
+    pub data: Date,
     /// Codice.
     pub codice: String,
     /// Descrizione breve.
@@ -712,9 +712,9 @@ pub struct VistaSal {
     /// Numero.
     pub numero: u32,
     /// Lavori a tutto il.
-    pub lavori_a_tutto_il: NaiveDate,
+    pub lavori_a_tutto_il: Date,
     /// Data di emissione.
-    pub data_emissione: Option<NaiveDate>,
+    pub data_emissione: Option<Date>,
     /// Stato.
     pub stato: StatoSal,
     /// Numeri delle registrazioni contabilizzate.
@@ -741,7 +741,7 @@ pub struct VistaPenale {
     /// Numero.
     pub numero: u32,
     /// Data.
-    pub data: NaiveDate,
+    pub data: Date,
     /// Motivo.
     pub descrizione: String,
     /// Importo.
@@ -760,9 +760,9 @@ pub struct VistaPenale {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct VistaContoFinale {
     /// Data di ultimazione dei lavori.
-    pub data_ultimazione: NaiveDate,
+    pub data_ultimazione: Date,
     /// Data del conto finale.
-    pub data: NaiveDate,
+    pub data: Date,
     /// Bozza o emesso.
     pub stato: StatoSal,
     /// Numeri delle registrazioni dello stato finale.
@@ -774,7 +774,7 @@ pub struct VistaContoFinale {
     /// Errore del calcolo.
     pub errore: Option<String>,
     /// Firma dell'esecutore.
-    pub firma_esecutore: Option<NaiveDate>,
+    pub firma_esecutore: Option<Date>,
     /// Riserve confermate.
     pub riserve: Option<String>,
     /// Collaudo o certificato di regolare esecuzione.
@@ -1280,7 +1280,7 @@ pub struct VistaNuovoPrezzo {
     /// Prezzo.
     pub prezzo: Prezzo,
     /// Data di formazione.
-    pub data: NaiveDate,
+    pub data: Date,
     /// Motivo.
     pub motivo: String,
     /// Criterio.
@@ -1303,13 +1303,13 @@ pub struct VistaVerbale {
     /// Numero.
     pub numero: u32,
     /// Data.
-    pub data: NaiveDate,
+    pub data: Date,
     /// Firma dell'esecutore.
-    pub firma_esecutore: Option<NaiveDate>,
+    pub firma_esecutore: Option<Date>,
     /// Riserve.
     pub riserve: Option<String>,
     /// Approvazione.
-    pub approvato_il: Option<NaiveDate>,
+    pub approvato_il: Option<Date>,
     /// Atto di approvazione.
     pub atto_approvazione: Option<String>,
     /// Note.
@@ -1478,9 +1478,9 @@ pub fn confronto_prezzario(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct VistaCronoprogramma {
     /// Inizio dei lavori impostato nel cronoprogramma.
-    pub inizio_lavori: Option<NaiveDate>,
+    pub inizio_lavori: Option<Date>,
     /// Consegna dei lavori del contratto (inizio se il precedente manca).
-    pub consegna_lavori: Option<NaiveDate>,
+    pub consegna_lavori: Option<Date>,
     /// Calendario.
     pub calendario: opencomputo_core::cronoprogramma::Calendario,
     /// Livello di dettaglio impostato.
@@ -1490,7 +1490,7 @@ pub struct VistaCronoprogramma {
     /// Nomi dei computi.
     pub computi: Vec<String>,
     /// Giorno di salvataggio della linea di base.
-    pub linea_base: Option<NaiveDate>,
+    pub linea_base: Option<Date>,
     /// Numero di nodi WBS.
     pub nodi_wbs: usize,
     /// Codice completo di ogni nodo WBS (per i legami con nodi non visibili).

@@ -10,7 +10,7 @@ verificate automaticamente da `cargo deny check`, vedi sotto).
 | `serde_json` | formato di persistenza, migrazioni | MIT OR Apache-2.0 |
 | `thiserror` | tipi di errore | MIT OR Apache-2.0 |
 | `uuid` (feature `std`, `serde`; `v4` opzionale) | identificativi stabili | MIT OR Apache-2.0 |
-| `chrono` (senza `clock`) | date (`NaiveDate`) | MIT OR Apache-2.0 |
+| `jiff` (solo `std`, `serde`: niente fusi orari) | date civili, modulo `data` del core | Unlicense OR MIT |
 | `rust_decimal_macros` (solo test) | letterali decimali `dec!()` | MIT |
 
 Dipendenze dirette aggiuntive di `opencomputo-format-xpwe`:
@@ -42,11 +42,11 @@ Apache-2.0), `simd-adler32` (MIT), `log` (MIT OR Apache-2.0). Le larghezze dei c
 del PDF sono le metriche Adobe Core 14, liberamente distribuibili.
 
 `opencomputo-storage` e `opencomputo-application` non aggiungono dipendenze esterne
-(usano `flate2`, `serde`, `serde_json`, `thiserror`, `uuid`, `chrono`, `rust_decimal`).
+(usano `flate2`, `serde`, `serde_json`, `thiserror`, `uuid`, `jiff`, `rust_decimal`).
 
 `opencomputo-format-listino` e `opencomputo-assistente` (ADR 0025) non aggiungono
 dipendenze esterne: usano `encoding_rs`, `sha2`, `serde`, `serde_json`, `thiserror`,
-`chrono` e `rust_decimal`, già presenti. Il lettore CSV è scritto nel crate.
+`jiff` e `rust_decimal`, già presenti. Il lettore CSV è scritto nel crate.
 
 Dipendenze dirette di `opencomputo-rete` (ADR 0025, fase 3: collegamento ai provider AI
 e portachiavi):
@@ -135,7 +135,7 @@ I test dell'interfaccia (`npm audit` in `ui-tests`): 0 vulnerabilità.
 Le versioni esatte sono fissate in `Cargo.lock`, incluso nel repository perché il
 workspace produce applicazioni. Aggiornate il 2026-10-21 con il risolutore che rispetta
 la versione minima di Rust dichiarata (**1.88**): `rust_decimal` 1.43.0, `serde`
-1.0.229, `serde_json` 1.0.154, `thiserror` 2.0.21, `uuid` 1.26.1, `chrono` 0.4.45,
+1.0.229, `serde_json` 1.0.154, `thiserror` 2.0.21, `uuid` 1.26.1, `jiff` 0.2.38 (al posto di `chrono` dal 2026-11-18),
 `quick-xml` 0.41.0, `encoding_rs` 0.8.42, `sha2` 0.11.1, `flate2` 1.1.10,
 `rust_xlsxwriter` 0.100.0, `zip` 9.0.5, `clap` 4.6.7, `tauri` 2.11.6, `tauri-build`
 2.6.3, `tauri-plugin-dialog` 2.7.3.

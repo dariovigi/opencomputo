@@ -4,8 +4,8 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use chrono::NaiveDate;
 use clap::{Parser, Subcommand, ValueEnum};
+use jiff::civil::Date;
 use opencomputo_agent_api::servizio::{Richiesta, Servizio, leggi, risposta};
 use opencomputo_agent_api::uscita;
 use opencomputo_application::casi_uso::{
@@ -178,7 +178,7 @@ enum Sotto {
         uscita: PathBuf,
         /// Data di stampa a piè di pagina (AAAA-MM-GG).
         #[arg(long)]
-        data: Option<NaiveDate>,
+        data: Option<Date>,
     },
     /// Regole ed esempi dei comandi JSON, per agenti e script.
     SchemaComandi,

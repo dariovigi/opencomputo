@@ -1,6 +1,6 @@
 //! Libretto delle misure.
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
 use crate::classificazione::AssegnazioneCategorie;
@@ -20,7 +20,7 @@ pub struct RegistrazioneLibretto {
     /// Numero d'ordine nel libretto (≥ 1, univoco).
     pub numero: u32,
     /// Data della misurazione.
-    pub data: NaiveDate,
+    pub data: Date,
     /// Prezzo contrattuale applicato (fotografia).
     pub prezzo: PrezzoApplicato,
     /// Righi di misura.
@@ -43,7 +43,7 @@ pub struct RegistrazioneLibretto {
 impl RegistrazioneLibretto {
     /// Nuova registrazione senza righi.
     #[must_use]
-    pub fn new(id: RegistrazioneId, numero: u32, data: NaiveDate, prezzo: PrezzoApplicato) -> Self {
+    pub fn new(id: RegistrazioneId, numero: u32, data: Date, prezzo: PrezzoApplicato) -> Self {
         Self {
             id,
             numero,

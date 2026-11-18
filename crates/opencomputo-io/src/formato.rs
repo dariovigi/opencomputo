@@ -4,7 +4,7 @@
 //! scala viene solo estesa fino ai decimali richiesti (`12.5` con 2 decimali →
 //! `12,50`); un valore con più decimali è scritto per intero.
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use rust_decimal::Decimal;
 
 /// Numero con separatore delle migliaia `.` e decimale `,` (es. `14.457,12`).
@@ -210,13 +210,14 @@ fn lettere_intero(n: u128) -> String {
 
 /// Data nel formato `gg/mm/aaaa`.
 #[must_use]
-pub fn data(d: NaiveDate) -> String {
-    d.format("%d/%m/%Y").to_string()
+pub fn data(d: Date) -> String {
+    d.strftime("%d/%m/%Y").to_string()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use opencomputo_core::data::data_amg;
     use rust_decimal_macros::dec;
 
     #[test]
@@ -231,10 +232,7 @@ mod tests {
         assert_eq!(numero(dec!(3.744), 2), "3,744");
         assert_eq!(numero_semplice(dec!(14457.1), 2, ','), "14457,10");
         assert_eq!(numero_semplice(dec!(-1234.5), 2, '.'), "-1234.50");
-        assert_eq!(
-            data(NaiveDate::from_ymd_opt(2026, 4, 5).unwrap()),
-            "05/04/2026"
-        );
+        assert_eq!(data(data_amg(2026, 4, 5).unwrap()), "05/04/2026");
     }
 
     #[test]

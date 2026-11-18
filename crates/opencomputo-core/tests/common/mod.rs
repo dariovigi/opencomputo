@@ -5,7 +5,8 @@
 
 #![allow(dead_code, missing_docs)]
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
+use opencomputo_core::data::data_amg;
 use opencomputo_core::prelude::*;
 use rust_decimal_macros::dec;
 
@@ -31,8 +32,8 @@ pub const VC_CLS: VoceComputoId = VoceComputoId::da_u128(4002);
 pub const VC_MURATURA: VoceComputoId = VoceComputoId::da_u128(4003);
 pub const VC_RECINZIONE: VoceComputoId = VoceComputoId::da_u128(4004);
 
-pub fn data(a: i32, m: u32, g: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(a, m, g).expect("data valida")
+pub fn data(a: i32, m: u32, g: u32) -> Date {
+    data_amg(a, m, g).expect("data valida")
 }
 
 fn voce(
@@ -245,7 +246,7 @@ pub fn registrazione(
     progetto: &Progetto,
     id: u128,
     numero: u32,
-    giorno: NaiveDate,
+    giorno: Date,
     voce: VocePrezzarioId,
     fattori: &[Decimal],
 ) -> RegistrazioneLibretto {

@@ -1,6 +1,6 @@
 //! Progetto: radice del modello di dominio.
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
 use crate::classificazione::{Categorie, StrutturaWbs};
@@ -49,7 +49,7 @@ pub struct MetadatiProgetto {
     pub direttore_lavori: Option<String>,
     /// Data del documento.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data: Option<NaiveDate>,
+    pub data: Option<Date>,
     /// Note.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
@@ -63,10 +63,10 @@ pub struct DatiContratto {
     pub numero_repertorio: Option<String>,
     /// Data di stipula.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data_stipula: Option<NaiveDate>,
+    pub data_stipula: Option<Date>,
     /// Data di consegna dei lavori.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data_consegna_lavori: Option<NaiveDate>,
+    pub data_consegna_lavori: Option<Date>,
     /// Tempo utile contrattuale in giorni.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tempo_utile_giorni: Option<u32>,
@@ -213,7 +213,7 @@ impl Progetto {
     pub fn emetti_sal(
         &mut self,
         id: SalId,
-        data_emissione: NaiveDate,
+        data_emissione: Date,
     ) -> Result<RiepilogoSal, ErroreDominio> {
         let parametri = self.parametri_contabili()?.clone();
         self.contabilita
@@ -235,7 +235,7 @@ impl Progetto {
     /// Contratto non definito o errori di [`Contabilita::emetti_conto_finale`].
     pub fn emetti_conto_finale(
         &mut self,
-        data: NaiveDate,
+        data: Date,
     ) -> Result<RiepilogoContoFinale, ErroreDominio> {
         let parametri = self.parametri_contabili()?.clone();
         self.contabilita

@@ -8,7 +8,7 @@
     clippy::indexing_slicing
 )]
 
-use chrono::NaiveDate;
+use opencomputo_core::data::data_amg;
 use opencomputo_core::schema::importa_json;
 use opencomputo_io::documento::{Documento, StileRiga, Valore};
 use opencomputo_io::report::{self, OpzioniReport};
@@ -21,7 +21,7 @@ const FIXTURE: &str =
 
 fn opzioni() -> OpzioniReport {
     OpzioniReport {
-        data_stampa: NaiveDate::from_ymd_opt(2026, 10, 21),
+        data_stampa: data_amg(2026, 10, 21),
     }
 }
 

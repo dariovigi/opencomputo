@@ -9,7 +9,7 @@
 //! essere ammessi in contabilità e l'esecutore li contesta iscrivendo riserva; il
 //! programma registra firma, riserve e approvazione e ne segnala la mancanza.
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
 use super::Contabilita;
@@ -21,16 +21,16 @@ pub struct VerbaleNuoviPrezzi {
     /// Numero.
     pub numero: u32,
     /// Data del verbale.
-    pub data: NaiveDate,
+    pub data: Date,
     /// Data della firma dell'esecutore (assente: non firmato).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub firma_esecutore: Option<NaiveDate>,
+    pub firma_esecutore: Option<Date>,
     /// Riserve dell'esecutore.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub riserve: Option<String>,
     /// Data dell'approvazione (RUP o stazione appaltante).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub approvato_il: Option<NaiveDate>,
+    pub approvato_il: Option<Date>,
     /// Estremi dell'atto di approvazione.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub atto_approvazione: Option<String>,

@@ -6,6 +6,7 @@
 //! problemi con gravità, codice stabile (adatto a filtri e API), messaggio e
 //! percorso dell'entità coinvolta. La validazione non modifica mai i dati.
 
+use crate::data::OperazioniData;
 use std::collections::BTreeSet;
 
 use rust_decimal::Decimal;
@@ -544,10 +545,7 @@ impl Validatore {
         let Some(collaudo) = &c.collaudo else {
             return;
         };
-        let entro = |mesi: u32| {
-            c.data_ultimazione
-                .checked_add_months(chrono::Months::new(mesi))
-        };
+        let entro = |mesi: u32| c.data_ultimazione.piu_mesi(mesi);
         match collaudo.tipo {
             TipoCollaudo::RegolareEsecuzione => {
                 if entro(3).is_some_and(|limite| collaudo.data > limite) {

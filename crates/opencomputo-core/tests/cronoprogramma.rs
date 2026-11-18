@@ -15,11 +15,12 @@ use opencomputo_core::cronoprogramma::{
     AttivitaAggiunta, Calendario, Chiusura, DatiAttivita, ErroreCronoprogramma, Legame, Piano,
     RifAttivita, TipoLegame, calcola, festivita_nazionale, linea_base, pasqua, verifica_legami,
 };
+use opencomputo_core::data::data_amg;
 use opencomputo_core::prelude::*;
 use rust_decimal_macros::dec;
 
-fn d(a: i32, m: u32, g: u32) -> chrono::NaiveDate {
-    chrono::NaiveDate::from_ymd_opt(a, m, g).unwrap()
+fn d(a: i32, m: u32, g: u32) -> jiff::civil::Date {
+    data_amg(a, m, g).unwrap()
 }
 
 const FINE_LAVORI: AttivitaId = AttivitaId::da_u128(8001);

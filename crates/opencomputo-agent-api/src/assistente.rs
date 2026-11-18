@@ -473,8 +473,9 @@ fn adesso() -> String {
     let s = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
-    chrono::DateTime::from_timestamp(i64::try_from(s).unwrap_or(0), 0)
-        .map(|d| d.to_rfc3339())
+    // Stesso formato di prima (RFC 3339 in UTC con `+00:00`).
+    jiff::Timestamp::from_second(i64::try_from(s).unwrap_or(0))
+        .map(|t| t.strftime("%Y-%m-%dT%H:%M:%S+00:00").to_string())
         .unwrap_or_default()
 }
 

@@ -10,7 +10,7 @@
 //! articolo di elenco prezzi tipico di alcuni modelli di registro è demandato
 //! al livello di reportistica.
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
 use crate::id::{RegistrazioneId, SalId};
@@ -31,7 +31,7 @@ pub struct RigaRegistro {
     /// Numero della registrazione nel libretto.
     pub numero_libretto: u32,
     /// Data della misurazione.
-    pub data: NaiveDate,
+    pub data: Date,
     /// Codice dell'articolo.
     pub codice: String,
     /// Descrizione breve.

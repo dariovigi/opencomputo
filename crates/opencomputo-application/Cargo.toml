@@ -17,7 +17,7 @@ opencomputo-io = { path = "../opencomputo-io" }
 serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 rust_decimal.workspace = true
 thiserror.workspace = true
 

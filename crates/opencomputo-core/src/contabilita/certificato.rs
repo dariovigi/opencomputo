@@ -28,7 +28,7 @@
 //! certificato il cui SAL arriva a quella data. I limiti sono verificati dalla
 //! validazione, non imposti dal calcolo.
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -46,7 +46,7 @@ pub struct Anticipazione {
     pub percentuale_recupero: Percentuale,
     /// Data di erogazione.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data_erogazione: Option<NaiveDate>,
+    pub data_erogazione: Option<Date>,
 }
 
 /// Penale applicata all'esecutore.
@@ -58,7 +58,7 @@ pub struct Penale {
     pub numero: u32,
     /// Data dell'applicazione: la penale va nel primo certificato il cui SAL arriva a
     /// questa data.
-    pub data: NaiveDate,
+    pub data: Date,
     /// Motivo.
     pub descrizione: String,
     /// Importo.

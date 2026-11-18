@@ -25,7 +25,7 @@ mod generico;
 
 use std::fmt::Write as _;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use opencomputo_core::progetto::Progetto;
 use rust_decimal::Decimal;
 
@@ -44,7 +44,7 @@ pub use generico::documento;
 #[derive(Debug, Clone)]
 pub struct OpzioniTradizionale {
     /// Data di stampa, usata in calce se il progetto non ha una data.
-    pub data_stampa: Option<NaiveDate>,
+    pub data_stampa: Option<Date>,
     /// Righe del riquadro in alto del frontespizio (es. «Comune di …», «Provincia di …»).
     pub ente: Vec<String>,
     /// Righe dello studio tecnico: testata di ogni pagina e riquadro in basso del

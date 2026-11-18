@@ -3,6 +3,7 @@
 use opencomputo_core::cronoprogramma::{
     self, AttivitaAggiunta, DatiAttivita, Legame, RifAttivita, linea_base,
 };
+use opencomputo_core::data::data_amg;
 use opencomputo_core::id::GeneratoreId;
 use opencomputo_core::progetto::Progetto;
 
@@ -71,7 +72,7 @@ fn verifica_cicli(p: &Progetto) -> Result<(), String> {
     cronoprogramma::verifica_legami(p).map_err(|e| e.to_string())?;
     let mut prova = p.clone();
     if cronoprogramma::inizio_lavori(&prova).is_none() {
-        prova.cronoprogramma.inizio_lavori = chrono::NaiveDate::from_ymd_opt(2000, 1, 3);
+        prova.cronoprogramma.inizio_lavori = data_amg(2000, 1, 3);
     }
     if !prova.cronoprogramma.calendario.ha_giorni_lavorativi() {
         return Ok(());

@@ -2328,8 +2328,8 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 name = "opencomputo-agent-api"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "clap",
+ "jiff",
  "opencomputo-application",
  "opencomputo-assistente",
  "opencomputo-core",
@@ -2344,7 +2344,7 @@ dependencies = [
 name = "opencomputo-application"
 version = "0.1.0"
 dependencies = [
- "chrono",
+ "jiff",
  "opencomputo-core",
  "opencomputo-dcf-parser",
  "opencomputo-format-listino",
@@ -2378,7 +2378,7 @@ dependencies = [
 name = "opencomputo-core"
 version = "0.1.0"
 dependencies = [
- "chrono",
+ "jiff",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -2391,9 +2391,9 @@ dependencies = [
 name = "opencomputo-dcf-parser"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "encoding_rs",
  "flate2",
+ "jiff",
  "opencomputo-core",
  "quick-xml 0.41.0",
  "rust_decimal",
@@ -2406,8 +2406,8 @@ dependencies = [
 name = "opencomputo-format-listino"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "encoding_rs",
+ "jiff",
  "opencomputo-core",
  "rust_decimal",
  "rust_decimal_macros",
@@ -2421,8 +2421,8 @@ dependencies = [
 name = "opencomputo-format-xpwe"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "encoding_rs",
+ "jiff",
  "opencomputo-core",
  "quick-xml 0.41.0",
  "rust_decimal",
@@ -2446,8 +2446,8 @@ dependencies = [
 name = "opencomputo-io"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "flate2",
+ "jiff",
  "opencomputo-core",
  "opencomputo-dcf-parser",
  "opencomputo-format-xpwe",

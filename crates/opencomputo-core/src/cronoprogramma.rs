@@ -23,7 +23,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use chrono::{Datelike, Duration, NaiveDate, Weekday};
+use crate::data::{Date, OperazioniData, data_amg};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -112,7 +112,7 @@ pub struct DatiAttivita {
     pub durata: Option<u32>,
     /// Vincolo: inizio non prima del giorno indicato.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub inizio_non_prima: Option<NaiveDate>,
+    pub inizio_non_prima: Option<Date>,
     /// Avanzamento in percentuale (0–100).
     #[serde(default, skip_serializing_if = "is_zero_u8")]
     pub avanzamento: u8,
@@ -165,9 +165,9 @@ pub struct AttivitaAggiunta {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Chiusura {
     /// Primo giorno.
-    pub dal: NaiveDate,
+    pub dal: Date,
     /// Ultimo giorno.
-    pub al: NaiveDate,
+    pub al: Date,
     /// Descrizione.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub descrizione: String,
@@ -207,7 +207,7 @@ impl Default for Calendario {
 
 /// Domenica di Pasqua (calendario gregoriano, algoritmo di Meeus/Jones/Butcher).
 #[must_use]
-pub fn pasqua(anno: i32) -> Option<NaiveDate> {
+pub fn pasqua(anno: i32) -> Option<Date> {
     let a = anno.rem_euclid(19);
     let b = anno.div_euclid(100);
     let c = anno.rem_euclid(100);
@@ -222,13 +222,13 @@ pub fn pasqua(anno: i32) -> Option<NaiveDate> {
     let m = (a + 11 * h + 22 * l).div_euclid(451);
     let mese = (h + l - 7 * m + 114).div_euclid(31);
     let giorno = (h + l - 7 * m + 114).rem_euclid(31) + 1;
-    NaiveDate::from_ymd_opt(anno, u32::try_from(mese).ok()?, u32::try_from(giorno).ok()?)
+    data_amg(anno, u32::try_from(mese).ok()?, u32::try_from(giorno).ok()?)
 }
 
 /// Festività nazionali italiane di un giorno: nome, se il giorno è festivo.
 #[must_use]
-pub fn festivita_nazionale(d: NaiveDate) -> Option<&'static str> {
-    let nome = match (d.month(), d.day()) {
+pub fn festivita_nazionale(d: Date) -> Option<&'static str> {
+    let nome = match (d.mese(), d.giorno()) {
         (1, 1) => "Capodanno",
         (1, 6) => "Epifania",
         (4, 25) => "Festa della Liberazione",
@@ -244,7 +244,7 @@ pub fn festivita_nazionale(d: NaiveDate) -> Option<&'static str> {
     if !nome.is_empty() {
         return Some(nome);
     }
-    let pasquetta = pasqua(d.year()).and_then(|p| p.checked_add_signed(Duration::days(1)));
+    let pasquetta = pasqua(d.anno()).and_then(|p| p.piu_giorni(1));
     (pasquetta == Some(d)).then_some("Lunedì dell'Angelo")
 }
 
@@ -257,16 +257,8 @@ impl Calendario {
 
     /// `true` se il giorno è lavorativo.
     #[must_use]
-    pub fn lavorativo(&self, d: NaiveDate) -> bool {
-        let indice = match d.weekday() {
-            Weekday::Mon => 0,
-            Weekday::Tue => 1,
-            Weekday::Wed => 2,
-            Weekday::Thu => 3,
-            Weekday::Fri => 4,
-            Weekday::Sat => 5,
-            Weekday::Sun => 6,
-        };
+    pub fn lavorativo(&self, d: Date) -> bool {
+        let indice = usize::try_from(d.giorno_settimana()).unwrap_or(0);
         if !self.giorni_lavorativi.get(indice).copied().unwrap_or(false) {
             return false;
         }
@@ -283,16 +275,16 @@ pub struct VoceLineaBase {
     /// Attività.
     pub attivita: RifAttivita,
     /// Inizio.
-    pub inizio: NaiveDate,
+    pub inizio: Date,
     /// Fine.
-    pub fine: NaiveDate,
+    pub fine: Date,
 }
 
 /// Linea di base: le date del piano in un momento dato, per misurare gli scostamenti.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LineaBase {
     /// Giorno in cui è stata salvata.
-    pub salvata_il: NaiveDate,
+    pub salvata_il: Date,
     /// Date delle attività visibili in quel momento.
     pub attivita: Vec<VoceLineaBase>,
 }
@@ -302,7 +294,7 @@ pub struct LineaBase {
 pub struct Cronoprogramma {
     /// Inizio dei lavori (assente: la consegna dei lavori del contratto).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub inizio_lavori: Option<NaiveDate>,
+    pub inizio_lavori: Option<Date>,
     /// Calendario.
     #[serde(default, skip_serializing_if = "Calendario::predefinito")]
     pub calendario: Calendario,
@@ -414,21 +406,21 @@ pub enum ErroreCronoprogramma {
 /// Scala dei giorni lavorativi a partire dal primo giorno lavorativo dall'inizio.
 struct Scala<'a> {
     calendario: &'a Calendario,
-    giorni: Vec<NaiveDate>,
+    giorni: Vec<Date>,
 }
 
 /// Limite di sicurezza: circa 200 anni di giorni di calendario.
 const LIMITE_GIORNI: i64 = 73_000;
 
 impl<'a> Scala<'a> {
-    fn new(calendario: &'a Calendario, inizio: NaiveDate) -> Result<Self, ErroreCronoprogramma> {
+    fn new(calendario: &'a Calendario, inizio: Date) -> Result<Self, ErroreCronoprogramma> {
         if !calendario.ha_giorni_lavorativi() {
             return Err(ErroreCronoprogramma::CalendarioVuoto);
         }
         let mut d = inizio;
         let mut passi = 0;
         while !calendario.lavorativo(d) {
-            d = d.succ_opt().ok_or(ErroreCronoprogramma::FuoriScala)?;
+            d = d.giorno_dopo().ok_or(ErroreCronoprogramma::FuoriScala)?;
             passi += 1;
             if passi > LIMITE_GIORNI {
                 return Err(ErroreCronoprogramma::CalendarioVuoto);
@@ -440,18 +432,18 @@ impl<'a> Scala<'a> {
         })
     }
 
-    fn primo(&self) -> NaiveDate {
+    fn primo(&self) -> Date {
         self.giorni.first().copied().unwrap_or_default()
     }
 
     /// Giorno lavorativo di indice `i` (negativo: prima dell'inizio).
-    fn data(&mut self, i: i64) -> Result<NaiveDate, ErroreCronoprogramma> {
+    fn data(&mut self, i: i64) -> Result<Date, ErroreCronoprogramma> {
         if i < 0 {
             let mut d = self.primo();
             let mut contati = 0;
             let mut passi = 0;
             while contati < -i {
-                d = d.pred_opt().ok_or(ErroreCronoprogramma::FuoriScala)?;
+                d = d.giorno_prima().ok_or(ErroreCronoprogramma::FuoriScala)?;
                 passi += 1;
                 if passi > LIMITE_GIORNI {
                     return Err(ErroreCronoprogramma::FuoriScala);
@@ -467,7 +459,7 @@ impl<'a> Scala<'a> {
             let mut d = self.giorni.last().copied().unwrap_or_default();
             let mut passi = 0;
             loop {
-                d = d.succ_opt().ok_or(ErroreCronoprogramma::FuoriScala)?;
+                d = d.giorno_dopo().ok_or(ErroreCronoprogramma::FuoriScala)?;
                 passi += 1;
                 if passi > LIMITE_GIORNI || self.giorni.len() > 60_000 {
                     return Err(ErroreCronoprogramma::FuoriScala);
@@ -486,13 +478,13 @@ impl<'a> Scala<'a> {
 
     /// Indice del primo giorno lavorativo non precedente a `d` (negativo se `d` viene
     /// prima dell'inizio).
-    fn indice(&mut self, d: NaiveDate) -> Result<i64, ErroreCronoprogramma> {
+    fn indice(&mut self, d: Date) -> Result<i64, ErroreCronoprogramma> {
         let primo = self.primo();
         if d < primo {
             let mut i = 0i64;
             let mut g = primo;
             while g > d {
-                g = g.pred_opt().ok_or(ErroreCronoprogramma::FuoriScala)?;
+                g = g.giorno_prima().ok_or(ErroreCronoprogramma::FuoriScala)?;
                 if g < d {
                     break;
                 }
@@ -549,13 +541,13 @@ pub struct RigaPiano {
     /// Durata non indicata (vale 1 giorno).
     pub durata_stimata: bool,
     /// Inizio al più presto.
-    pub inizio: NaiveDate,
+    pub inizio: Date,
     /// Fine al più presto.
-    pub fine: NaiveDate,
+    pub fine: Date,
     /// Inizio al più tardi.
-    pub inizio_tardi: NaiveDate,
+    pub inizio_tardi: Date,
     /// Fine al più tardi.
-    pub fine_tardi: NaiveDate,
+    pub fine_tardi: Date,
     /// Margine totale in giorni lavorativi.
     pub margine: i64,
     /// Sul percorso critico (margine nullo o negativo).
@@ -563,13 +555,13 @@ pub struct RigaPiano {
     /// Avanzamento in percentuale (per i riepiloghi, pesato sulle durate).
     pub avanzamento: u8,
     /// Vincolo «inizio non prima del».
-    pub inizio_non_prima: Option<NaiveDate>,
+    pub inizio_non_prima: Option<Date>,
     /// Importo dal computo (nodi WBS).
     pub importo: Option<Importo>,
     /// Inizio nella linea di base.
-    pub inizio_base: Option<NaiveDate>,
+    pub inizio_base: Option<Date>,
     /// Fine nella linea di base.
-    pub fine_base: Option<NaiveDate>,
+    pub fine_base: Option<Date>,
     /// Scostamento della fine dalla linea di base, in giorni lavorativi.
     pub scostamento: Option<i64>,
     /// Predecessori visibili.
@@ -622,15 +614,15 @@ pub struct Piano {
     /// Legami memorizzati con le righe visibili che collegano.
     pub legami: Vec<LegamePiano>,
     /// Primo giorno lavorativo.
-    pub inizio: NaiveDate,
+    pub inizio: Date,
     /// Ultimo giorno di lavoro.
-    pub fine: NaiveDate,
+    pub fine: Date,
     /// Durata complessiva in giorni lavorativi.
     pub durata: u32,
     /// Durata complessiva in giorni naturali e consecutivi.
     pub durata_naturale: i64,
     /// Ultimazione prevista dal contratto (consegna + tempo utile), se nota.
-    pub scadenza_contrattuale: Option<NaiveDate>,
+    pub scadenza_contrattuale: Option<Date>,
     /// Livello di dettaglio applicato.
     pub livello_dettaglio: Option<u32>,
     /// Profondità massima della WBS.
@@ -644,7 +636,7 @@ pub struct Piano {
     /// Produzione mensile.
     pub mesi: Vec<ProduzioneMese>,
     /// Giorni non lavorativi tra inizio e fine (per l'ombreggiatura del diagramma).
-    pub giorni_non_lavorativi: Vec<NaiveDate>,
+    pub giorni_non_lavorativi: Vec<Date>,
 }
 
 /// Elemento del piano in costruzione.
@@ -820,7 +812,7 @@ fn durata(e: &Elemento) -> (i64, bool) {
 
 /// Inizio dei lavori: quello del cronoprogramma o la consegna del contratto.
 #[must_use]
-pub fn inizio_lavori(p: &Progetto) -> Option<NaiveDate> {
+pub fn inizio_lavori(p: &Progetto) -> Option<Date> {
     p.cronoprogramma
         .inizio_lavori
         .or_else(|| p.contratto.as_ref().and_then(|c| c.data_consegna_lavori))
@@ -1149,7 +1141,7 @@ pub fn calcola(p: &Progetto, livello: Option<Option<u32>>) -> Result<Piano, Erro
     };
 
     // Linea di base.
-    let base: HashMap<RifAttivita, (NaiveDate, NaiveDate)> = c
+    let base: HashMap<RifAttivita, (Date, Date)> = c
         .linea_base
         .as_ref()
         .map(|b| {
@@ -1261,7 +1253,7 @@ pub fn calcola(p: &Progetto, livello: Option<Option<u32>>) -> Result<Piano, Erro
         let mut giorni: BTreeMap<(i32, u32), i64> = BTreeMap::new();
         for g in es..ef {
             let d = scala.data(g)?;
-            *giorni.entry((d.year(), d.month())).or_default() += 1;
+            *giorni.entry((d.anno(), d.mese())).or_default() += 1;
         }
         let totale = Decimal::from(ef - es);
         let mut assegnato = Decimal::ZERO;
@@ -1287,13 +1279,13 @@ pub fn calcola(p: &Progetto, livello: Option<Option<u32>>) -> Result<Piano, Erro
     let mut mesi = Vec::new();
     if !per_mese.is_empty() {
         let mut cumulato = Decimal::ZERO;
-        let (mut a, mut m) = (inizio_piano.year(), inizio_piano.month());
+        let (mut a, mut m) = (inizio_piano.anno(), inizio_piano.mese());
         let ultimo = per_mese
             .keys()
             .next_back()
             .copied()
-            .unwrap_or((fine_piano.year(), fine_piano.month()))
-            .max((fine_piano.year(), fine_piano.month()));
+            .unwrap_or((fine_piano.anno(), fine_piano.mese()))
+            .max((fine_piano.anno(), fine_piano.mese()));
         let primo = per_mese
             .keys()
             .next()
@@ -1329,7 +1321,7 @@ pub fn calcola(p: &Progetto, livello: Option<Option<u32>>) -> Result<Piano, Erro
     let scadenza_contrattuale = p.contratto.as_ref().and_then(|ct| {
         let consegna = ct.data_consegna_lavori?;
         let giorni = ct.tempo_utile_giorni?;
-        consegna.checked_add_signed(Duration::days(i64::from(giorni) - 1))
+        consegna.piu_giorni(i64::from(giorni) - 1)
     });
     let mut non_lavorativi = Vec::new();
     let mut d = inizio_piano;
@@ -1337,7 +1329,7 @@ pub fn calcola(p: &Progetto, livello: Option<Option<u32>>) -> Result<Piano, Erro
         if !c.calendario.lavorativo(d) {
             non_lavorativi.push(d);
         }
-        match d.succ_opt() {
+        match d.giorno_dopo() {
             Some(x) => d = x,
             None => break,
         }
@@ -1355,7 +1347,7 @@ pub fn calcola(p: &Progetto, livello: Option<Option<u32>>) -> Result<Piano, Erro
         inizio: inizio_piano,
         fine: fine_piano,
         durata: u32::try_from(fine_progetto.max(0)).unwrap_or(u32::MAX),
-        durata_naturale: (fine_piano - inizio_piano).num_days() + 1,
+        durata_naturale: fine_piano.giorni_da(inizio_piano) + 1,
         scadenza_contrattuale,
         livello_dettaglio: livello,
         livelli_wbs,
@@ -1440,7 +1432,7 @@ fn nome_attivita(p: &Progetto, r: RifAttivita) -> String {
 
 /// Linea di base dalle date di un piano calcolato.
 #[must_use]
-pub fn linea_base(piano: &Piano, salvata_il: NaiveDate) -> LineaBase {
+pub fn linea_base(piano: &Piano, salvata_il: Date) -> LineaBase {
     LineaBase {
         salvata_il,
         attivita: piano

@@ -126,9 +126,15 @@ Totali: `cargo test --workspace` 414 test, `npm test` 47, `npm run vera` 5;
 
 ### Dipendenze (2026-11-18)
 
-`chrono` è segnalato non mantenuto (RUSTSEC-2026-0543, nessuna vulnerabilità): eccezione
-motivata in `deny.toml`. Da pianificare la sostituzione con `jiff`, verificando che le
-date dei progetti salvati (fixture v1–v7) restino leggibili.
+`chrono`, segnalato non mantenuto (RUSTSEC-2026-0543), è stato **sostituito con `jiff`**
+0.2.38 (già presente come dipendenza indiretta). Le operazioni sulle date stanno nel
+modulo `opencomputo_core::data` (`data_amg`, `OperazioniData`): data non valida o fuori
+intervallo → `None`, mai un panic. Formato nei file invariato (`AAAA-MM-GG`,
+`AAAA-MM-GGThh:mm:ss`): le fixture v1–v7 si rileggono e si riscrivono identiche byte per
+byte. In lettura `jiff` è più rigoroso: rifiuta `2026-4-5` senza zeri e gli spazi attorno
+(i file scritti dal programma non li hanno mai). `cargo deny` passa senza eccezioni per
+`chrono`; `cargo test --workspace` 431 test, `npm test` 54, tutti passati su Linux. Non
+riprovati: compilazione del core per wasm32 e Rust 1.88 (la CI lo verifica).
 
 ### Non verificato
 

@@ -10,6 +10,7 @@
 
 use opencomputo_application::casi_uso::{self, FormatoReport, TipoReport};
 use opencomputo_application::{Comando, ErroreApplicazione, Politica, Sessione, viste};
+use opencomputo_core::data::data_amg;
 use opencomputo_core::numeri::Importo;
 use opencomputo_core::schema::importa_json;
 use opencomputo_core::validazione::valida_progetto;
@@ -1750,10 +1751,7 @@ fn cronoprogramma_con_i_comandi() {
     );
     let v = viste::cronoprogramma(s.progetto());
     let piano = v.piano.unwrap();
-    assert_eq!(
-        piano.fine,
-        chrono::NaiveDate::from_ymd_opt(2026, 4, 3).unwrap()
-    );
+    assert_eq!(piano.fine, data_amg(2026, 4, 3).unwrap());
     assert_eq!(piano.legami.len(), 3);
     let json = serde_json::to_value(viste::cronoprogramma(s.progetto())).unwrap();
     assert_eq!(json["piano"]["righe"][1]["attivita"]["tipo"], "wbs");

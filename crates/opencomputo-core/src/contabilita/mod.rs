@@ -29,7 +29,7 @@ pub mod sommario;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
 use crate::errore::{ErroreCalcolo, ErroreDominio, ErroreLocalizzato};
@@ -238,10 +238,7 @@ impl Contabilita {
     /// Registrazioni non ancora attribuite a un SAL con data non successiva a
     /// `fino_al`, in ordine di numero.
     #[must_use]
-    pub fn registrazioni_da_contabilizzare(
-        &self,
-        fino_al: NaiveDate,
-    ) -> Vec<&RegistrazioneLibretto> {
+    pub fn registrazioni_da_contabilizzare(&self, fino_al: Date) -> Vec<&RegistrazioneLibretto> {
         let assegnate: BTreeSet<RegistrazioneId> = self
             .sal
             .iter()
@@ -266,7 +263,7 @@ impl Contabilita {
     pub fn nuovo_sal(
         &mut self,
         id: SalId,
-        lavori_a_tutto_il: NaiveDate,
+        lavori_a_tutto_il: Date,
     ) -> Result<&StatoAvanzamentoLavori, ErroreDominio> {
         self.verifica_aperta()?;
         if self.conto_finale.is_some() {
@@ -466,7 +463,7 @@ impl Contabilita {
     pub fn emetti_sal(
         &mut self,
         id: SalId,
-        data_emissione: NaiveDate,
+        data_emissione: Date,
         parametri: &ParametriContabili,
         regole: &RegoleArrotondamento,
     ) -> Result<RiepilogoSal, ErroreDominio> {
@@ -839,7 +836,7 @@ impl Contabilita {
 
         let mut sal_visti = BTreeSet::new();
         let mut assegnazioni: BTreeMap<RegistrazioneId, u32> = BTreeMap::new();
-        let mut data_precedente: Option<NaiveDate> = None;
+        let mut data_precedente: Option<Date> = None;
         let ultimo = self.sal.len().saturating_sub(1);
         for (i, s) in self.sal.iter().enumerate() {
             let percorso = vec![rif_sal(s)];

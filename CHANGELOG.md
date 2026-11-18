@@ -7,6 +7,13 @@ secondo il versionamento semantico.
 
 Prima versione: tutte le fasi di sviluppo 1–6. Dettagli in `docs/STATO.md`.
 
+### Dipendenze (2026-11-18)
+
+* `chrono`, segnalato non mantenuto (RUSTSEC-2026-0543), sostituito con `jiff`. Le date
+  nei file `.ocp` e nel servizio JSON hanno lo stesso formato: i progetti salvati si
+  aprono come prima. Unica differenza visibile: nelle richieste JSON le date vanno
+  scritte con gli zeri (`2026-04-05`, non `2026-4-5`), come fa già l'interfaccia.
+
 ### Aggiunto (2026-11-13)
 
 * Nuova icona dell'applicazione (`crates/opencomputo-gui/icons/opencomputo.svg`) in tutti

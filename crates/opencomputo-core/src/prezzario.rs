@@ -9,7 +9,7 @@
 //! [`crate::partita::PrezzoApplicato`]). Modificare un prezzario non altera mai
 //! i documenti in cui le sue voci sono già state usate.
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
 use crate::analisi::{AnalisiPrezzo, ParametriAnalisi, RisorsaElementare, RisultatoAnalisi};
@@ -86,7 +86,7 @@ pub struct NuovoPrezzo {
     /// Numero (NP.1, NP.2, …).
     pub numero: u32,
     /// Data di formazione.
-    pub data: NaiveDate,
+    pub data: Date,
     /// Motivo (variante, lavorazione non prevista…).
     #[serde(default)]
     pub motivo: String,
@@ -192,7 +192,7 @@ pub struct Prezzario {
     pub edizione: Option<String>,
     /// Data di pubblicazione.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data_pubblicazione: Option<NaiveDate>,
+    pub data_pubblicazione: Option<Date>,
     /// Capitoli.
     #[serde(default)]
     pub capitoli: Vec<CapitoloPrezzario>,

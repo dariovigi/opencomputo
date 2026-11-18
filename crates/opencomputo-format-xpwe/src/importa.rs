@@ -13,7 +13,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use chrono::NaiveDateTime;
+use jiff::civil::DateTime;
 use opencomputo_core::analisi::{AnalisiPrezzo, BaseUtile, OrigineRigaAnalisi, RigaAnalisi};
 use opencomputo_core::classificazione::{AssegnazioneCategorie, Classe, LivelloCategoria};
 use opencomputo_core::computo::{Computo, VoceComputo};
@@ -45,7 +45,7 @@ pub struct OpzioniImport {
     /// Nome del file di origine (per la provenienza e i messaggi).
     pub nome_file: Option<String>,
     /// Momento dell'importazione (il core non legge l'orologio di sistema).
-    pub importato_il: Option<NaiveDateTime>,
+    pub importato_il: Option<DateTime>,
     /// Nome del computo creato dalle voci di computo.
     pub nome_computo: String,
 }

@@ -17,7 +17,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use opencomputo_core::aggiornamento::{
     CampiAggiornamento, SceltaAggiornamento, SostituzionePrefisso, aggiorna_da_listino,
 };
@@ -409,7 +409,7 @@ pub enum Comando {
         importo_contrattuale: Option<Importo>,
         /// Data di consegna dei lavori.
         #[serde(default)]
-        data_consegna_lavori: Option<NaiveDate>,
+        data_consegna_lavori: Option<Date>,
         /// Aliquota IVA dei certificati di pagamento (`null` = nessuna).
         #[serde(
             default,
@@ -433,7 +433,7 @@ pub enum Comando {
         percentuale_recupero: Option<Percentuale>,
         /// Data di erogazione.
         #[serde(default)]
-        data_erogazione: Option<NaiveDate>,
+        data_erogazione: Option<Date>,
         /// Rimuove l'anticipazione.
         #[serde(default)]
         rimuovi: bool,
@@ -442,7 +442,7 @@ pub enum Comando {
     /// dell'importo contrattuale (art. 126: 0,5–1,5 per mille, al massimo 10 %).
     RegistraPenale {
         /// Data: la penale va nel primo certificato il cui SAL arriva a questa data.
-        data: NaiveDate,
+        data: Date,
         /// Motivo.
         descrizione: String,
         /// Importo.
@@ -754,7 +754,7 @@ pub enum Comando {
     /// Registra una misurazione nel libretto delle misure.
     Registra {
         /// Data della misurazione.
-        data: NaiveDate,
+        data: Date,
         /// Codice della voce di elenco prezzi.
         codice: String,
         /// Righi di misura.
@@ -770,7 +770,7 @@ pub enum Comando {
         numero: u32,
         /// Data.
         #[serde(default)]
-        data: Option<NaiveDate>,
+        data: Option<Date>,
         /// Righi (sostituiscono quelli esistenti).
         #[serde(default)]
         righi: Option<Vec<NuovoRigo>>,
@@ -786,7 +786,7 @@ pub enum Comando {
     /// Crea un SAL in bozza con le registrazioni non ancora contabilizzate fino alla data.
     NuovoSal {
         /// Lavori a tutto il.
-        lavori_a_tutto_il: NaiveDate,
+        lavori_a_tutto_il: Date,
     },
     /// Annulla un SAL in bozza.
     AnnullaBozzaSal {
@@ -798,17 +798,17 @@ pub enum Comando {
         /// Numero del SAL.
         numero: u32,
         /// Data di emissione.
-        data_emissione: NaiveDate,
+        data_emissione: Date,
     },
     /// Redige il conto finale in bozza (con le registrazioni non comprese nei SAL come
     /// stato finale) o ne aggiorna date e note.
     RedigiContoFinale {
         /// Data di ultimazione dei lavori (obbligatoria alla prima redazione).
         #[serde(default)]
-        data_ultimazione: Option<NaiveDate>,
+        data_ultimazione: Option<Date>,
         /// Data del conto finale (predefinita: quella di ultimazione).
         #[serde(default)]
-        data: Option<NaiveDate>,
+        data: Option<Date>,
         /// Note o relazione (`null` le rimuove).
         #[serde(
             default,
@@ -821,7 +821,7 @@ pub enum Comando {
     EmettiContoFinale {
         /// Data di emissione (predefinita: quella del conto).
         #[serde(default)]
-        data: Option<NaiveDate>,
+        data: Option<Date>,
     },
     /// Annulla il conto finale in bozza.
     AnnullaContoFinale {},
@@ -829,7 +829,7 @@ pub enum Comando {
     FirmaContoFinale {
         /// Data della firma.
         #[serde(default)]
-        data: Option<NaiveDate>,
+        data: Option<Date>,
         /// Riserve confermate.
         #[serde(default)]
         riserve: Option<String>,
@@ -841,10 +841,10 @@ pub enum Comando {
         tipo: Option<TipoCollaudo>,
         /// Data del certificato.
         #[serde(default)]
-        data: Option<NaiveDate>,
+        data: Option<Date>,
         /// Data di approvazione della stazione appaltante.
         #[serde(default)]
-        approvato_il: Option<NaiveDate>,
+        approvato_il: Option<Date>,
         /// Rimuove il collaudo registrato.
         #[serde(default)]
         rimuovi: bool,
@@ -974,7 +974,7 @@ pub enum Comando {
             deserialize_with = "opzione_doppia",
             skip_serializing_if = "Option::is_none"
         )]
-        inizio_lavori: Option<Option<NaiveDate>>,
+        inizio_lavori: Option<Option<Date>>,
         /// Livello di dettaglio della WBS (1 = radici; `null`: tutti i livelli).
         #[serde(
             default,
@@ -1017,7 +1017,7 @@ pub enum Comando {
             deserialize_with = "opzione_doppia",
             skip_serializing_if = "Option::is_none"
         )]
-        inizio_non_prima: Option<Option<NaiveDate>>,
+        inizio_non_prima: Option<Option<Date>>,
         /// Avanzamento in percentuale (0–100).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         avanzamento: Option<u8>,
@@ -1088,7 +1088,7 @@ pub enum Comando {
     LineaBaseCronoprogramma {
         /// Giorno del salvataggio (obbligatorio per salvare).
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        data: Option<NaiveDate>,
+        data: Option<Date>,
         /// Toglie la linea di base.
         #[serde(default)]
         cancella: bool,
@@ -1128,7 +1128,7 @@ pub enum Comando {
         voce: String,
         /// Data di formazione (obbligatoria per un nuovo prezzo nuovo).
         #[serde(default)]
-        data: Option<NaiveDate>,
+        data: Option<Date>,
         /// Motivo.
         #[serde(default)]
         motivo: Option<String>,
@@ -1152,7 +1152,7 @@ pub enum Comando {
         numero: Option<u32>,
         /// Data del verbale (obbligatoria per un verbale nuovo).
         #[serde(default)]
-        data: Option<NaiveDate>,
+        data: Option<Date>,
         /// Codici delle voci (nuovi prezzi) compresi.
         #[serde(default)]
         nuovi_prezzi: Option<Vec<String>>,
@@ -1162,7 +1162,7 @@ pub enum Comando {
             deserialize_with = "opzione_doppia",
             skip_serializing_if = "Option::is_none"
         )]
-        firma_esecutore: Option<Option<NaiveDate>>,
+        firma_esecutore: Option<Option<Date>>,
         /// Riserve dell'esecutore.
         #[serde(
             default,
@@ -1176,7 +1176,7 @@ pub enum Comando {
             deserialize_with = "opzione_doppia",
             skip_serializing_if = "Option::is_none"
         )]
-        approvato_il: Option<Option<NaiveDate>>,
+        approvato_il: Option<Option<Date>>,
         /// Estremi dell'atto di approvazione.
         #[serde(
             default,

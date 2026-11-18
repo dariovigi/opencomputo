@@ -10,7 +10,7 @@ license.workspace = true
 [dependencies]
 opencomputo-core = { path = "../opencomputo-core" }
 rust_decimal.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 thiserror.workspace = true
 flate2.workspace = true
 rust_xlsxwriter.workspace = true

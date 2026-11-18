@@ -26,7 +26,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 
-use chrono::NaiveDateTime;
+use jiff::civil::DateTime;
 use opencomputo_core::classificazione::Classe;
 use opencomputo_core::id::CapitoloId;
 use opencomputo_core::prezzario::{CapitoloPrezzario, NaturaVoce, VocePrezzario};
@@ -127,7 +127,7 @@ const CALCOLATI_EP: [&str; 12] = [
 #[derive(Debug, Clone)]
 pub struct OpzioniExport {
     /// Data e ora del documento (date dell'indice del contenitore).
-    pub data: NaiveDateTime,
+    pub data: DateTime,
     /// Versione di OpenComputo, scritta come programma di origine.
     pub versione_programma: String,
 }

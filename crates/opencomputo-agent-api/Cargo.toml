@@ -20,7 +20,7 @@ opencomputo-assistente = { path = "../opencomputo-assistente" }
 opencomputo-rete = { path = "../opencomputo-rete" }
 serde.workspace = true
 serde_json.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 clap.workspace = true
 
 [features]

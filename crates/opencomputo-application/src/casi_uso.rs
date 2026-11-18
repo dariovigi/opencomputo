@@ -1,6 +1,7 @@
 //! Casi d'uso che coinvolgono i formati esterni: import XPWE, DCF e listini CSV/JSON, export XPWE,
 //! report. Restituiscono byte e rapporti: la scrittura su disco spetta al chiamante.
 
+use opencomputo_core::data::{OperazioniData, data_amg};
 use opencomputo_core::id::{ComputoId, GeneratoreSequenziale};
 use opencomputo_core::prezzario::Prezzario;
 use opencomputo_core::progetto::Progetto;
@@ -209,16 +210,16 @@ fn vero() -> bool {
 /// Elenco prezzi vuoto o oltre i limiti del contenitore.
 pub fn esporta_dcf(
     p: &Progetto,
-    data: Option<chrono::NaiveDate>,
+    data: Option<jiff::civil::Date>,
 ) -> Result<opencomputo_dcf_parser::esporta::RisultatoExport, ErroreApplicazione> {
     let giorno = p
         .metadati
         .data
         .or(data)
-        .or_else(|| chrono::NaiveDate::from_ymd_opt(2000, 1, 1))
+        .or_else(|| data_amg(2000, 1, 1))
         .unwrap_or_default();
     let opzioni = opencomputo_dcf_parser::esporta::OpzioniExport {
-        data: giorno.and_time(chrono::NaiveTime::MIN),
+        data: giorno.mezzanotte(),
         versione_programma: env!("CARGO_PKG_VERSION").to_owned(),
     };
     opencomputo_dcf_parser::esporta::esporta(p, &opzioni).map_err(|e| {

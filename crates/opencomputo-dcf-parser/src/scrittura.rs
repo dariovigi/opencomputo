@@ -15,9 +15,9 @@
 
 use std::io::Write as _;
 
-use chrono::NaiveDateTime;
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
+use jiff::civil::DateTime;
 
 use crate::contenitore::{
     DIMENSIONE_SETTORE, FIRMA_FILE, FIRMA_FLUSSO, FIRMA_SETTORI, INIZIO_SETTORI, TESTATA_SETTORE,
@@ -92,8 +92,11 @@ fn u32_di(v: usize) -> Result<u32, ErroreDcf> {
 
 /// Data e ora in formato FILETIME (centinaia di nanosecondi dal 1601).
 #[must_use]
-pub fn filetime(t: NaiveDateTime) -> u64 {
-    let secondi = t.and_utc().timestamp().saturating_add(11_644_473_600);
+pub fn filetime(t: DateTime) -> u64 {
+    let unix = jiff::tz::Offset::UTC
+        .to_timestamp(t)
+        .map_or(0, |istante| istante.as_second());
+    let secondi = unix.saturating_add(11_644_473_600);
     u64::try_from(secondi)
         .unwrap_or(0)
         .saturating_mul(10_000_000)
@@ -154,7 +157,7 @@ fn chiudi_settore(s: &mut [u8], campo0: u32, tipo_settore: u32) {
 ///
 /// # Errors
 /// Genitori non validi, nomi troppo lunghi, file oltre i limiti del formato.
-pub fn scrivi(elementi: &[Elemento], data: NaiveDateTime) -> Result<Vec<u8>, ErroreDcf> {
+pub fn scrivi(elementi: &[Elemento], data: DateTime) -> Result<Vec<u8>, ErroreDcf> {
     for (i, e) in elementi.iter().enumerate() {
         if let Some(g) = e.genitore()
             && !matches!(elementi.get(g), Some(Elemento::Cartella { .. }) if g < i)
@@ -354,10 +357,11 @@ pub fn scrivi(elementi: &[Elemento], data: NaiveDateTime) -> Result<Vec<u8>, Err
 mod tests {
     use super::*;
     use crate::{contenitore, struttura};
+    use opencomputo_core::data::{OperazioniData, data_amg};
 
-    fn data() -> NaiveDateTime {
-        chrono::NaiveDate::from_ymd_opt(2026, 10, 21)
-            .and_then(|d| d.and_hms_opt(12, 0, 0))
+    fn data() -> DateTime {
+        data_amg(2026, 10, 21)
+            .and_then(|d| d.alle(12, 0, 0))
             .unwrap_or_default()
     }
 

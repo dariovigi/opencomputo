@@ -13,6 +13,8 @@
     clippy::indexing_slicing
 )]
 
+use opencomputo_core::data::OperazioniData;
+use opencomputo_core::data::data_amg;
 use opencomputo_core::id::GeneratoreSequenziale;
 use opencomputo_dcf_parser::contenitore::{self, Contenuto};
 use opencomputo_dcf_parser::{ErroreDcf, OpzioniImport, importa};
@@ -176,10 +178,7 @@ fn struttura_dei_dcf_reali_e_riscrittura() {
                 }
             })
             .collect();
-        let data = chrono::NaiveDate::from_ymd_opt(2026, 10, 21)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
+        let data = data_amg(2026, 10, 21).unwrap().alle(0, 0, 0).unwrap();
         let riscritto = scrittura::scrivi(&elementi, data).unwrap();
         assert!(struttura::verifica(&riscritto).unwrap().is_empty());
         let r = struttura::leggi(&riscritto).unwrap();
@@ -245,10 +244,7 @@ fn export_dei_prezzari_reali_fedele() {
             continue;
         };
         let o = OpzioniExport {
-            data: chrono::NaiveDate::from_ymd_opt(2026, 10, 21)
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap(),
+            data: data_amg(2026, 10, 21).unwrap().alle(0, 0, 0).unwrap(),
             versione_programma: "prova".into(),
         };
         let r = esporta(&imp.progetto, &o).unwrap();

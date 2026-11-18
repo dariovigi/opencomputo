@@ -8,14 +8,14 @@
 
 use std::path::Path;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use opencomputo_core::schema::importa_json;
 use opencomputo_io::documento::Documento;
 use opencomputo_io::report::{self, OpzioniReport};
 use opencomputo_io::tradizionale::{self, OpzioniTradizionale};
 use opencomputo_io::{csv, pdf, xlsx};
 
-fn scrivi(cartella: &Path, nome: &str, doc: &Documento, data: Option<NaiveDate>) {
+fn scrivi(cartella: &Path, nome: &str, doc: &Documento, data: Option<Date>) {
     let p = pdf::documento(doc, &pdf::OpzioniPdf::default());
     std::fs::write(cartella.join(format!("{nome}.pdf")), &p.byte).unwrap();
     let x = xlsx::documento(doc, &xlsx::OpzioniXlsx { data }).unwrap();
@@ -50,7 +50,7 @@ fn main() {
     let uscita = args.next().expect("cartella di uscita");
     let data = args
         .next()
-        .map(|d| NaiveDate::parse_from_str(&d, "%Y-%m-%d").expect("data aaaa-mm-gg"));
+        .map(|d| Date::strptime("%Y-%m-%d", &d).expect("data aaaa-mm-gg"));
     let progetto = importa_json(&std::fs::read_to_string(ingresso).unwrap()).unwrap();
     let cartella = Path::new(&uscita);
     std::fs::create_dir_all(cartella).unwrap();

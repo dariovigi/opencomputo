@@ -11,8 +11,8 @@
     clippy::indexing_slicing
 )]
 
-use chrono::NaiveDate;
 use opencomputo_core::classificazione::AssegnazioneCategorie;
+use opencomputo_core::data::data_amg;
 use opencomputo_core::id::{GeneratoreId, GeneratoreSequenziale};
 use opencomputo_core::progetto::Progetto;
 use opencomputo_core::schema::importa_json;
@@ -29,7 +29,7 @@ fn progetto() -> Progetto {
     p.metadati.oggetto = Some("Costruzione della nuova scuola primaria".into());
     p.metadati.progettista = Some("Ing. Maria Bianchi".into());
     p.metadati.luogo = Some("Esempio".into());
-    p.metadati.data = NaiveDate::from_ymd_opt(2026, 10, 21);
+    p.metadati.data = data_amg(2026, 10, 21);
     p.elenco_prezzi.voci[0].descrizione_estesa = DESCRIZIONE_LUNGA.into();
     p.computi[0].voci[0].prezzo.descrizione_estesa = DESCRIZIONE_LUNGA.into();
     p
@@ -593,7 +593,7 @@ fn documenti_di_cantiere_nel_modello_tradizionale() {
     let mut p = importa_json(FIXTURE_CONTABILITA).unwrap();
     p.metadati.direttore_lavori = Some("Arch. Paolo Verdi".into());
     let o = OpzioniReport {
-        data_stampa: NaiveDate::from_ymd_opt(2026, 5, 2),
+        data_stampa: data_amg(2026, 5, 2),
     };
     let doc = report::registro(&p, &o).unwrap();
     let opzioni = OpzioniTradizionale {

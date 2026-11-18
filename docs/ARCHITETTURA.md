@@ -207,7 +207,8 @@ pagina a un processo `opencomputo servizio` reale.
 
 Il core è progettato per `wasm32-unknown-unknown`: nessuna dipendenza da I/O,
 nessuna generazione casuale di default (la feature `id-casuali` abilita UUID v4 e
-richiederà `getrandom` con supporto JS), `chrono` senza la feature `clock`.
+richiederà `getrandom` con supporto JS), `jiff` solo per le date civili (senza fusi orari né
+lettura dell'orologio; non ancora riprovato per wasm dopo il passaggio da `chrono`).
 **Verificato** il 2026-10-20: con le feature di default il core compila (debug e
 release) e passa clippy per `wasm32-unknown-unknown`. Con `id-casuali` la compilazione
 fallisce finché non si sceglie la sorgente di casualità di `uuid` (es. feature `js`):

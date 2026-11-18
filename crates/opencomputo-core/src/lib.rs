@@ -25,6 +25,7 @@ pub mod classificazione;
 pub mod computo;
 pub mod contabilita;
 pub mod cronoprogramma;
+pub mod data;
 pub mod errore;
 pub mod fabbisogno;
 pub mod formula;

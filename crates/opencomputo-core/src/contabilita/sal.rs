@@ -24,7 +24,7 @@
 //! contabilizzati a percentuale, revisione prezzi. Le aliquote sono parametri del
 //! contratto: il core non impone valori normativi.
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -89,10 +89,10 @@ pub struct StatoAvanzamentoLavori {
     /// Numero progressivo (1, 2, …).
     pub numero: u32,
     /// Lavori contabilizzati a tutto il giorno indicato.
-    pub lavori_a_tutto_il: NaiveDate,
+    pub lavori_a_tutto_il: Date,
     /// Data di emissione.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data_emissione: Option<NaiveDate>,
+    pub data_emissione: Option<Date>,
     /// Stato.
     pub stato: StatoSal,
     /// Registrazioni del libretto contabilizzate in questo SAL.

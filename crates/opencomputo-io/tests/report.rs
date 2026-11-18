@@ -8,7 +8,7 @@
     clippy::indexing_slicing
 )]
 
-use chrono::NaiveDate;
+use opencomputo_core::data::data_amg;
 use opencomputo_core::id::{ComputoId, GeneratoreId, GeneratoreSequenziale, SalId};
 use opencomputo_core::misura::Fattore;
 use opencomputo_core::progetto::Progetto;
@@ -28,7 +28,7 @@ fn progetto() -> Progetto {
 
 fn opzioni() -> OpzioniReport {
     OpzioniReport {
-        data_stampa: NaiveDate::from_ymd_opt(2026, 10, 20),
+        data_stampa: data_amg(2026, 10, 20),
     }
 }
 
@@ -250,7 +250,7 @@ fn sal_emessi_e_in_bozza() {
     let mut reg = opencomputo_core::contabilita::RegistrazioneLibretto::new(
         g.nuovo(),
         5,
-        NaiveDate::from_ymd_opt(2026, 5, 20).unwrap(),
+        data_amg(2026, 5, 20).unwrap(),
         prezzo,
     );
     reg.righi.push(
@@ -260,7 +260,7 @@ fn sal_emessi_e_in_bozza() {
     p.contabilita.registra(reg).unwrap();
     let nuovo: SalId = g.nuovo();
     p.contabilita
-        .nuovo_sal(nuovo, NaiveDate::from_ymd_opt(2026, 5, 31).unwrap())
+        .nuovo_sal(nuovo, data_amg(2026, 5, 31).unwrap())
         .unwrap_or_else(|e| panic!("{e}"));
     let doc = report::stato_avanzamento(&p, nuovo, &opzioni()).unwrap();
     assert!(doc.titolo.ends_with("— BOZZA"));
@@ -394,7 +394,7 @@ fn xlsx_un_foglio_per_sezione_e_riproducibile() {
     let p = progetto();
     let doc = report::computo(&p, computo_id(&p), &opzioni()).unwrap();
     let o = xlsx::OpzioniXlsx {
-        data: NaiveDate::from_ymd_opt(2026, 10, 20),
+        data: data_amg(2026, 10, 20),
     };
     let a = xlsx::documento(&doc, &o).unwrap();
     assert_eq!(

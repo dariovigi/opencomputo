@@ -56,6 +56,8 @@
   documento vuoto, con il percorso del file reso generico): non inserire nel repository
   file con dati reali di clienti o percorsi personali.
 * Nessun `f32`/`f64` per valori contabili (lint `clippy::float_arithmetic = deny`).
+* Date: `jiff::civil` attraverso `opencomputo_core::data` (`data_amg`, `OperazioniData`);
+  niente `chrono` (non mantenuto, RUSTSEC-2026-0543).
 * Assistente AI (ADR 0025): il modello propone handle di candidati e forme del catalogo
   chiuso, mai prezzi, codici o formule; i `Comando` nascono dalle scelte dell'utente e
   sono provati nella `Sessione`. I test non fanno chiamate AI reali. Chiavi solo nel

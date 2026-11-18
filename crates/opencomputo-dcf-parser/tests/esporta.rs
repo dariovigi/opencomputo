@@ -8,7 +8,8 @@
     clippy::indexing_slicing
 )]
 
-use chrono::NaiveDate;
+use opencomputo_core::data::OperazioniData;
+use opencomputo_core::data::data_amg;
 use opencomputo_core::id::{CapitoloId, GeneratoreId, GeneratoreSequenziale};
 use opencomputo_core::numeri::{Percentuale, Prezzo};
 use opencomputo_core::prezzario::{CapitoloPrezzario, NaturaVoce};
@@ -23,10 +24,7 @@ const FIXTURE: &str =
 
 fn opzioni() -> OpzioniExport {
     OpzioniExport {
-        data: NaiveDate::from_ymd_opt(2026, 10, 21)
-            .unwrap()
-            .and_hms_opt(16, 30, 0)
-            .unwrap(),
+        data: data_amg(2026, 10, 21).unwrap().alle(16, 30, 0).unwrap(),
         versione_programma: "0.1.0".into(),
     }
 }

@@ -6,9 +6,10 @@
 //! numero in virgola mobile è richiesta dal formato XLSX e conserva le 15 cifre
 //! significative visualizzate da Excel.
 
+use opencomputo_core::data::{OperazioniData, data_amg};
 use std::collections::HashMap;
 
-use chrono::{Datelike, NaiveDate};
+use jiff::civil::Date;
 use rust_decimal::prelude::ToPrimitive;
 use rust_xlsxwriter::{
     Color, DocProperties, ExcelDateTime, Format, FormatAlign, FormatBorder, Workbook, Worksheet,
@@ -43,7 +44,7 @@ impl From<XlsxError> for ErroreXlsx {
 pub struct OpzioniXlsx {
     /// Data registrata nelle proprietà del file. Senza data viene usato il
     /// 1° gennaio 2000, così il file è riproducibile e non legge l'orologio.
-    pub data: Option<NaiveDate>,
+    pub data: Option<Date>,
 }
 
 /// Larghezza totale indicativa di una tabella, in caratteri.
@@ -279,11 +280,11 @@ pub fn documento(doc: &Documento, o: &OpzioniXlsx) -> Result<Vec<u8>, ErroreXlsx
     let mut wb = Workbook::new();
     let data = o
         .data
-        .unwrap_or_else(|| NaiveDate::from_ymd_opt(2000, 1, 1).unwrap_or_default());
+        .unwrap_or_else(|| data_amg(2000, 1, 1).unwrap_or_default());
     let creazione = ExcelDateTime::from_ymd(
-        u16::try_from(data.year()).map_err(|_| ErroreXlsx::OltreLimiti)?,
-        u8::try_from(data.month()).map_err(|_| ErroreXlsx::OltreLimiti)?,
-        u8::try_from(data.day()).map_err(|_| ErroreXlsx::OltreLimiti)?,
+        u16::try_from(data.anno()).map_err(|_| ErroreXlsx::OltreLimiti)?,
+        u8::try_from(data.mese()).map_err(|_| ErroreXlsx::OltreLimiti)?,
+        u8::try_from(data.giorno()).map_err(|_| ErroreXlsx::OltreLimiti)?,
     )?;
     wb.set_properties(
         &DocProperties::new()

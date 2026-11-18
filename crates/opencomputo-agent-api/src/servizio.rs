@@ -14,7 +14,7 @@ use std::sync::{Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use opencomputo_application::casi_uso::{self, FormatoReport, TipoReport};
 use opencomputo_application::{Comando, ErroreApplicazione, Politica, Sessione, viste};
 use opencomputo_core::aggiornamento::SostituzionePrefisso;
@@ -116,7 +116,7 @@ pub enum Richiesta {
         percorso: PathBuf,
         /// Data del documento, se il progetto non ne ha una (AAAA-MM-GG).
         #[serde(default)]
-        data: Option<NaiveDate>,
+        data: Option<Date>,
     },
     /// Produce un report.
     Report {
@@ -133,7 +133,7 @@ pub enum Richiesta {
         file: Option<PathBuf>,
         /// Data di stampa a piè di pagina.
         #[serde(default)]
-        data_stampa: Option<NaiveDate>,
+        data_stampa: Option<Date>,
     },
     /// Anteprima di un report: lo stesso documento di PDF, XLSX e CSV, con le celle
     /// già formattate.
@@ -142,7 +142,7 @@ pub enum Richiesta {
         report: TipoReport,
         /// Data di stampa a piè di pagina.
         #[serde(default)]
-        data_stampa: Option<NaiveDate>,
+        data_stampa: Option<Date>,
         /// Modello tradizionale: prima pagina da restituire (da 1; predefinita 1).
         #[serde(default)]
         prima_pagina: Option<usize>,

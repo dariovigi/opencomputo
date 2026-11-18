@@ -5,7 +5,7 @@
 //! [`Computo::calcola`](opencomputo_core::computo::Computo::calcola), del libretto,
 //! del registro e dei SAL, con gli stessi arrotondamenti.
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use std::collections::BTreeMap;
 
 use opencomputo_core::classificazione::LivelloCategoria;
@@ -41,7 +41,7 @@ pub enum ErroreReport {
 #[derive(Debug, Clone, Default)]
 pub struct OpzioniReport {
     /// Data di stampa, riportata a piè di pagina (il core non legge l'orologio).
-    pub data_stampa: Option<NaiveDate>,
+    pub data_stampa: Option<Date>,
 }
 
 /// Decimali minimi dei fattori di misura.

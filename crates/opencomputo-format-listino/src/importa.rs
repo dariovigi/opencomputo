@@ -13,7 +13,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::{NaiveDate, NaiveDateTime};
+use jiff::civil::{Date, DateTime};
 use opencomputo_core::id::GeneratoreId;
 use opencomputo_core::numeri::{Percentuale, Prezzo};
 use opencomputo_core::prezzario::{CapitoloPrezzario, NaturaVoce, Prezzario, VocePrezzario};
@@ -57,7 +57,7 @@ pub struct OpzioniListino {
     /// Edizione o versione.
     pub edizione: Option<String>,
     /// Momento dell'importazione, dichiarato dal chiamante.
-    pub importato_il: Option<NaiveDateTime>,
+    pub importato_il: Option<DateTime>,
     /// Separatore di campo del CSV; se assente si riconosce dall'intestazione.
     pub separatore_campi: Option<char>,
     /// Separatore decimale.
@@ -129,7 +129,7 @@ struct Metadati {
     nome: Option<String>,
     ente: Option<String>,
     edizione: Option<String>,
-    data: Option<NaiveDate>,
+    data: Option<Date>,
     /// Capitoli dichiarati: codice, descrizione, codice del padre, posizione.
     capitoli: Vec<(String, String, Option<String>, String)>,
 }
@@ -343,7 +343,7 @@ pub fn importa_json<G: GeneratoreId>(
             meta.ente = stringa(o, "ente");
             meta.edizione = stringa(o, "edizione");
             if let Some(d) = stringa(o, "data_pubblicazione") {
-                match NaiveDate::parse_from_str(&d, "%Y-%m-%d") {
+                match Date::strptime("%Y-%m-%d", &d) {
                     Ok(d) => meta.data = Some(d),
                     Err(_) => extra.push(anomalia(
                         Gravita::Avviso,
