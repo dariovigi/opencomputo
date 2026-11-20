@@ -6,6 +6,7 @@ use opencomputo_core::id::{ComputoId, GeneratoreSequenziale};
 use opencomputo_core::prezzario::Prezzario;
 use opencomputo_core::progetto::Progetto;
 use opencomputo_core::provenienza::Anomalia;
+use opencomputo_core::validazione::Gravita;
 use opencomputo_io::documento::Documento;
 use opencomputo_io::report::{self, OpzioniReport};
 use opencomputo_io::tradizionale::{self, OpzioniTradizionale};
@@ -93,6 +94,53 @@ pub fn importa_dcf(
 ) -> Result<(Sessione, RapportoImportazione), ErroreApplicazione> {
     let (p, r) = progetto_da_dcf(byte, nome_file)?;
     Ok((Sessione::new(p), r))
+}
+
+/// Crea un progetto da un DCF con il convertitore esterno scelto dall'utente
+/// (ADR 0027). Il progetto prodotto è letto come un file `.ocp` qualunque.
+///
+/// # Errors
+/// Vedi [`crate::convertitore::converti`].
+pub fn importa_con_convertitore(
+    programma: &std::path::Path,
+    origine: &std::path::Path,
+) -> Result<
+    (
+        Sessione,
+        RapportoImportazione,
+        crate::convertitore::Resoconto,
+    ),
+    ErroreApplicazione,
+> {
+    let c = crate::convertitore::converti(programma, origine, crate::convertitore::DURATA_MASSIMA)?;
+    let p = c.progetto;
+    let mut anomalie = vec![Anomalia {
+        gravita: Gravita::Informazione,
+        codice: "convertitore.esterno".into(),
+        messaggio: format!(
+            "documento convertito dal programma esterno «{}»: OpenComputo non ne verifica il funzionamento, controllare il resoconto e il progetto",
+            c.resoconto.programma
+        ),
+        posizione: None,
+    }];
+    if !c.resoconto.messaggi.is_empty() {
+        anomalie.push(Anomalia {
+            gravita: Gravita::Avviso,
+            codice: "convertitore.messaggi".into(),
+            messaggio: format!(
+                "messaggi del convertitore: {}",
+                c.resoconto.messaggi.chars().take(500).collect::<String>()
+            ),
+            posizione: None,
+        });
+    }
+    let rapporto = RapportoImportazione {
+        formato: "dcf (convertitore esterno)".into(),
+        voci_elenco: p.elenco_prezzi.voci.len(),
+        voci_computo: p.computi.iter().map(|c| c.voci.len()).sum(),
+        anomalie,
+    };
+    Ok((Sessione::new(p), rapporto, c.resoconto))
 }
 
 /// `true` se il primo carattere significativo (dopo BOM e spazi) è `<`.

@@ -122,7 +122,7 @@ export async function apriBanco({ larghezza = 1600, altezza = 900, provider = nu
   });
   // Come il lato Rust: dopo una richiesta riuscita che modifica il progetto, evento
   // `progetto-aggiornato` a tutte le finestre, con l'etichetta di quella d'origine.
-  const MODIFICANO = new Set(['apri', 'nuovo', 'importa', 'salva', 'esegui', 'annulla', 'ripristina', 'carica_prezzario', 'chiudi', 'assistente_applica']);
+  const MODIFICANO = new Set(['apri', 'nuovo', 'importa', 'salva', 'esegui', 'annulla', 'ripristina', 'carica_prezzario', 'chiudi', 'assistente_applica', 'importa_con_convertitore']);
   await contesto.exposeFunction('__ocInvia', async (json, origine) => {
     const risposta = await m.invia(json);
     const r = JSON.parse(risposta);

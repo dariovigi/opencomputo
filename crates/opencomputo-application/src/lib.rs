@@ -30,6 +30,7 @@ pub mod casi_uso;
 pub mod comandi;
 mod comandi_analisi;
 mod comandi_crono;
+pub mod convertitore;
 pub mod errore;
 pub mod sessione;
 pub mod viste;

@@ -31,6 +31,7 @@ const MOD = mac ? '⌘' : 'Ctrl+';
 
 const FILTRO_PROGETTO = [{ name: 'Progetto OpenComputo', extensions: ['ocp', 'json'] }];
 const FILTRO_IMPORT = [{ name: 'PriMus XPWE o DCF', extensions: ['xpwe', 'XPWE', 'dcf', 'DCF'] }];
+const FILTRO_DCF = [{ name: 'PriMus DCF', extensions: ['dcf', 'DCF'] }];
 
 /** Chiede se salvare le modifiche. `true` se si può procedere. */
 async function salvaSeNecessario() {
@@ -44,9 +45,14 @@ async function salvaSeNecessario() {
   return r === 'no';
 }
 
-async function sostituisciProgetto(richiesta) {
+/**
+ * Sostituisce il progetto aperto con quello della richiesta. Con `chiudiPrima = false`
+ * il progetto aperto resta se la richiesta fallisce (il servizio lo sostituisce solo a
+ * richiesta riuscita).
+ */
+async function sostituisciProgetto(richiesta, { chiudiPrima = true } = {}) {
   if (!(await salvaSeNecessario())) return null;
-  if (stato.info) await chiedi({ richiesta: 'chiudi', forza: true }).catch(() => {});
+  if (chiudiPrima && stato.info) await chiedi({ richiesta: 'chiudi', forza: true }).catch(() => {});
   const r = await agisci(richiesta);
   if (r) vai('computo');
   return r;
@@ -79,6 +85,67 @@ export async function importa() {
       imp.anomalie.length ? h('ul', { class: 'elenco-problemi' }, imp.anomalie.slice(0, 12).map((a) =>
         h('li', { class: a.gravita === 'errore' ? 'errore' : a.gravita === 'avviso' ? 'avviso' : 'informazione' }, a.messaggio))) : null,
       imp.anomalie.length > 12 ? h('p', { class: 'vuoto' }, `… e altre ${imp.anomalie.length - 12}.`) : null,
+      h('p', { class: 'vuoto' }, 'Il progetto importato non è ancora salvato: usare «Salva con nome».')),
+  });
+}
+
+/**
+ * Convertitore DCF esterno (ADR 0027): mostra l'avviso e il programma configurato, e
+ * permette di sceglierlo o toglierlo. Restituisce lo stato finale (o null se annullato).
+ */
+export async function configuraConvertitore() {
+  let st;
+  try { st = await chiedi({ richiesta: 'convertitore_stato' }); } catch (e) { mostraErrore(e); return null; }
+  const pulsanti = [{ testo: 'Annulla', valore: null }];
+  if (st.programma) pulsanti.push({ testo: 'Togli', valore: 'togli', tipo: 'pericolo' });
+  pulsanti.push({ testo: st.programma ? 'Cambia programma…' : 'Scegli il programma…', valore: 'scegli', tipo: 'primario' });
+  const scelta = await modale({
+    titolo: 'Convertitore DCF esterno',
+    contenuto: h('div', { class: 'convertitore' },
+      h('p', null, st.avviso),
+      h('p', null, 'Il programma viene lanciato come «programma convert <documento.dcf> <progetto.ocp> --report <resoconto.txt>».'),
+      h('p', null, h('strong', null, 'Programma: '), st.programma ? h('code', null, st.programma) : 'nessuno'),
+      st.problema ? h('p', { class: 'errore' }, st.problema) : null),
+    pulsanti,
+  });
+  if (scelta === 'togli') {
+    const r = await agisci({ richiesta: 'convertitore_imposta', programma: null });
+    if (r) notifica('Convertitore tolto', 'info', null, 2000);
+    return r;
+  }
+  if (scelta !== 'scegli') return null;
+  const programma = await scegliFile('Scegli il convertitore DCF esterno', []);
+  if (!programma) return null;
+  const r = await agisci({ richiesta: 'convertitore_imposta', programma });
+  if (r) notifica('Convertitore impostato', 'ok', null, 2000);
+  return r;
+}
+
+/** Importa un DCF con il convertitore esterno; al primo uso chiede di configurarlo. */
+export async function importaConConvertitore() {
+  let st;
+  try { st = await chiedi({ richiesta: 'convertitore_stato' }); } catch (e) { mostraErrore(e); return; }
+  if (!st.utilizzabile) {
+    st = await configuraConvertitore();
+    if (!st?.utilizzabile) return;
+  }
+  const origine = await scegliFile('Importa DCF con il convertitore esterno', FILTRO_DCF);
+  if (!origine) return;
+  // Il progetto aperto resta se la conversione non riesce.
+  const r = await sostituisciProgetto({ richiesta: 'importa_con_convertitore', origine }, { chiudiPrima: false });
+  if (!r) return;
+  const imp = r.importazione;
+  const conv = r.convertitore;
+  modale({
+    titolo: 'Conversione completata',
+    larga: true,
+    contenuto: h('div', { class: 'convertitore' },
+      h('p', null, `Convertito con «${conv.programma}»: ${imp.voci_elenco} voci di elenco prezzi, ${imp.voci_computo} voci di computo.`),
+      h('p', null, 'Il progetto è stato prodotto da un programma esterno: controllarlo (vista «Problemi») prima di usarlo.'),
+      h('h4', null, 'Resoconto del convertitore'),
+      h('pre', { class: 'resoconto' }, conv.testo || '(nessun resoconto)'),
+      conv.messaggi ? [h('h4', null, 'Messaggi'), h('pre', { class: 'resoconto' }, conv.messaggi)] : null,
+      conv.troncato ? h('p', { class: 'vuoto' }, 'Il resoconto è stato troncato.') : null,
       h('p', { class: 'vuoto' }, 'Il progetto importato non è ancora salvato: usare «Salva con nome».')),
   });
 }
@@ -143,6 +210,8 @@ function menuAltro() {
           voce('Nuovo progetto…', nuovo, `${MOD}N`),
           voce('Apri…', apri, `${MOD}O`),
           voce('Importa da PriMus (XPWE, DCF)…', importa),
+          voce('Importa DCF con convertitore esterno…', importaConConvertitore),
+          voce('Convertitore DCF esterno…', configuraConvertitore),
           h('hr'),
           voce('Salva', salva, `${MOD}S`),
           voce('Salva con nome…', salvaConNome, `${MOD}⇧S`),

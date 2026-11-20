@@ -723,3 +723,8 @@ table.crono-legami, table.crono-mesi { border-collapse: collapse; width: 100%; f
   .navigazione button { padding-left: 10px; padding-right: 8px; }
   .con-filtri { grid-template-columns: 190px minmax(0, 1fr); }
 }
+
+/* Convertitore DCF esterno (ADR 0027) */
+.convertitore code { word-break: break-all; }
+.convertitore .errore { color: var(--errore); }
+.convertitore pre.resoconto { white-space: pre-wrap; max-height: 260px; overflow: auto; font-size: 12px; font-family: var(--mono); background: var(--voce); color: var(--testo); padding: 8px; border-radius: 6px; }

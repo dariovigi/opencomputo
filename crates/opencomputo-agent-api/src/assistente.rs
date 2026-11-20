@@ -428,7 +428,7 @@ fn file_errore(percorso: &Path, e: &std::io::Error) -> ErroreApplicazione {
 }
 
 /// Scrive un file sostituendo il precedente solo a scrittura completata.
-fn scrivi_atomico(percorso: &Path, byte: &[u8]) -> Result<(), ErroreApplicazione> {
+pub(crate) fn scrivi_atomico(percorso: &Path, byte: &[u8]) -> Result<(), ErroreApplicazione> {
     use std::io::Write as _;
     scrivi_atomico_con(percorso, |f| f.write_all(byte))
 }

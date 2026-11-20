@@ -24,6 +24,7 @@
 //! ```
 
 pub mod assistente;
+pub mod convertitore;
 pub mod riepilogo;
 pub mod schema;
 pub mod servizio;

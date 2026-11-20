@@ -30,7 +30,7 @@ use opencomputo_assistente::verifica;
 use crate::assistente::{
     self, Ambiente, Assistente, Avanzamento, Bisogno, EsitoLavoro, Interruttore, Lavoro, TipoLavoro,
 };
-use crate::{riepilogo, schema};
+use crate::{convertitore, riepilogo, schema};
 
 /// Risultati mostrati da `cerca` se non indicato diversamente.
 pub const LIMITE_RICERCA: usize = 20;
@@ -56,6 +56,20 @@ pub enum Richiesta {
     Importa {
         /// File di origine.
         origine: PathBuf,
+    },
+    /// Crea un progetto da un DCF con il convertitore esterno configurato (ADR 0027).
+    ImportaConConvertitore {
+        /// Documento `.dcf` da convertire.
+        origine: PathBuf,
+    },
+    /// Convertitore DCF esterno: programma configurato, se è utilizzabile, avviso.
+    ConvertitoreStato {},
+    /// Convertitore DCF esterno: imposta il programma (percorso assoluto) o lo toglie
+    /// (`null`).
+    ConvertitoreImposta {
+        /// Percorso del programma.
+        #[serde(default)]
+        programma: Option<PathBuf>,
     },
     /// Salva il progetto (scrittura atomica con copie di sicurezza).
     Salva {
@@ -379,6 +393,7 @@ impl Richiesta {
             Self::Apri { .. }
                 | Self::Nuovo { .. }
                 | Self::Importa { .. }
+                | Self::ImportaConConvertitore { .. }
                 | Self::Salva { .. }
                 | Self::Esegui { .. }
                 | Self::Annulla {}
@@ -424,6 +439,9 @@ pub struct Servizio {
     assistente: Option<Assistente>,
     /// Ambiente dell'assistente; se assente quello del sistema.
     ambiente: Option<Ambiente>,
+    /// Cartella di configurazione (assistente e convertitore); se assente quella
+    /// predefinita.
+    cartella: Option<PathBuf>,
     avanzamento: Option<Avanzamento>,
     interruttore: Interruttore,
     /// Cresce a ogni cambio di progetto: un lavoro concluso su un altro progetto non
@@ -476,8 +494,17 @@ impl Servizio {
     /// chiamata, alla prima richiesta `assistente_*` si usa [`Ambiente::di_sistema`].
     #[must_use]
     pub fn con_ambiente(mut self, ambiente: Ambiente) -> Self {
+        self.cartella = Some(ambiente.cartella.clone());
         self.ambiente = Some(ambiente);
         self.assistente = None;
+        self
+    }
+
+    /// Cartella di configurazione (convertitore DCF esterno; per l'assistente vale
+    /// quella del suo [`Ambiente`]).
+    #[must_use]
+    pub fn con_cartella(mut self, cartella: PathBuf) -> Self {
+        self.cartella = Some(cartella);
         self
     }
 
@@ -487,6 +514,13 @@ impl Servizio {
     pub fn con_avanzamento(mut self, f: Avanzamento) -> Self {
         self.avanzamento = Some(f);
         self
+    }
+
+    /// Cartella di configurazione.
+    fn cartella(&self) -> PathBuf {
+        self.cartella
+            .clone()
+            .unwrap_or_else(assistente::cartella_predefinita)
     }
 
     fn assistente(&mut self) -> Result<&mut Assistente, ErroreApplicazione> {
@@ -761,6 +795,21 @@ impl Servizio {
                 };
                 self.sostituisci(s, None)?;
                 Ok(json!({"importazione": rapporto, "progetto": self.info()?}))
+            }
+            Richiesta::ImportaConConvertitore { origine } => {
+                let programma = convertitore::programma(&self.cartella())?;
+                let (s, rapporto, resoconto) =
+                    casi_uso::importa_con_convertitore(&programma, &origine)?;
+                self.sostituisci(s, None)?;
+                Ok(json!({
+                    "importazione": rapporto,
+                    "convertitore": resoconto,
+                    "progetto": self.info()?,
+                }))
+            }
+            Richiesta::ConvertitoreStato {} => Ok(convertitore::stato(&self.cartella())),
+            Richiesta::ConvertitoreImposta { programma } => {
+                convertitore::imposta(&self.cartella(), programma)
             }
             Richiesta::Salva { percorso, gzip } => self.salva(percorso, gzip),
             Richiesta::Info {} => self.info(),
