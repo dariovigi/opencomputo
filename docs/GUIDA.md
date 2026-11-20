@@ -61,8 +61,8 @@ Titolo, oggetto, committente, impresa, luogo, CIG, CUP, responsabile del procedi
 progettista, direttore dei lavori; dati del contratto (ribasso d'asta, ritenuta di
 garanzia, importo contrattuale, consegna dei lavori, IVA dei certificati di pagamento,
 manodopera esclusa dal ribasso); anticipazione del prezzo;
-arrotondamenti (decimali di quantità, prezzi e importi, modalità). Ogni campo si applica
-quando lo si lascia.
+arrotondamenti (decimali di quantità, prezzi e importi, al massimo 10; modalità). Ogni
+campo si applica quando lo si lascia.
 
 Dopo l'emissione di un SAL i parametri che lo modificherebbero (per esempio il ribasso)
 non sono più modificabili: OpenComputo rifiuta la modifica e lo spiega.
@@ -910,6 +910,13 @@ controlli: `opencomputo schema-comandi` elenca i comandi disponibili. Vedi il RE
   attività sono pianificate al più presto, con i soli vincoli «inizio non prima del».
 * Gli arrotondamenti predefiniti (2 decimali, metà per eccesso, per rigo) sono
   un'assunzione ragionevole ma non ancora confrontata con documenti prodotti da PriMus.
+* Dimensioni e valori massimi: file di progetto fino a 512 MB (anche compressi: conta il
+  contenuto), file da importare (XPWE, DCF, listini) fino a 256 MB; quantità e importi
+  di una voce o di una registrazione fino a un milione di miliardi (10^15) in valore
+  assoluto. Oltre, il file non viene letto o la voce è segnalata come non calcolabile.
+  Un progetto con regole di arrotondamento oltre i 10 decimali (possibile solo da un
+  file modificato a mano) si apre, ma report ed export sono rifiutati finché non si
+  correggono.
 * Il calcolo non verifica la conformità alla normativa (D.Lgs. 36/2023): ribasso,
   sicurezza, manodopera e ritenuta sono parametri impostati dall'utente.
 * Certificati e rata di saldo non comprendono ritenute fiscali né split payment; il

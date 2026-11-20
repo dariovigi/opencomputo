@@ -238,3 +238,4 @@ Le decisioni sono registrate in [`adr/`](adr/):
 * [0014 — Variabili nelle analisi, oneri aziendali della sicurezza, aggiornamento dei prezzi, computo con analisi](adr/0014-variabili-e-aggiornamento-prezzi.md)
 * Le decisioni dalla 0015 alla 0024 sono nella cartella [`adr/`](adr/).
 * [0025 — Assistente AI per il computo e listini CSV/JSON](adr/0025-assistente-ai.md)
+* [0026 — Prestazioni con progetti grandi e limiti dei file](adr/0026-prestazioni-e-limiti.md)

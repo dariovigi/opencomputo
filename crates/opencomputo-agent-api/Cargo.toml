@@ -30,5 +30,8 @@ chiavi-da-ambiente = ["opencomputo-rete/chiavi-da-ambiente"]
 # le chiamate ai provider vanno a un server locale finto e le chiavi restano in memoria.
 banco-di-prova = []
 
+[dev-dependencies]
+flate2.workspace = true
+
 [lints]
 workspace = true

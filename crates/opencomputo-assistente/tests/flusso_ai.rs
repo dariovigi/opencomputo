@@ -13,6 +13,7 @@
     clippy::float_arithmetic
 )]
 
+use std::sync::Arc;
 use std::sync::Mutex;
 
 use opencomputo_application::Sessione;
@@ -232,7 +233,7 @@ fn indicizzazione_incrementale_e_ripresa() {
     assert_eq!((r.riusate, r.calcolate, r.lotti), (26, 0, 0));
 
     // Cambia una descrizione e sparisce una voce: una sola voce ricalcolata, una rimossa.
-    p.voci[0]
+    Arc::make_mut(&mut p.voci[0])
         .descrizione_estesa
         .push_str(" in terreno roccioso");
     p.voci.pop();

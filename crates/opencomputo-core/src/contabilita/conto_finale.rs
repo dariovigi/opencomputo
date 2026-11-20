@@ -38,6 +38,7 @@
 
 use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use super::sal::{ParametriContabili, StatoSal};
 use super::{Contabilita, Penale, RegistrazioneLibretto};
@@ -202,6 +203,7 @@ impl Contabilita {
                 .libretto
                 .registrazioni
                 .iter()
+                .map(Arc::as_ref)
                 .filter(|r| self.sal_di(r.id).is_none())
                 .collect(),
         };

@@ -2,6 +2,7 @@
 
 use opencomputo_core::prezzario::VocePrezzario;
 use opencomputo_core::progetto::Progetto;
+use std::sync::Arc;
 
 use super::{
     Allineamento, Carattere, Colore, Corpo, Intestazione, Linea, OpzioniTradizionale, PaginaCorpo,
@@ -129,6 +130,7 @@ pub fn elenco_prezzi(p: &Progetto, o: &OpzioniTradizionale) -> RisultatoPdf {
     let senza: Vec<&VocePrezzario> = ep
         .voci
         .iter()
+        .map(Arc::as_ref)
         .filter(|v| {
             v.capitolo
                 .is_none_or(|c| !ep.capitoli.iter().any(|x| x.id == c))
@@ -174,17 +176,21 @@ pub fn elenco_prezzi(p: &Progetto, o: &OpzioniTradizionale) -> RisultatoPdf {
     let titolo = "ELENCO PREZZI";
     let mut tele = Vec::new();
     if o.frontespizio {
-        let mut t = Tela::default();
-        int.frontespizio(&mut t, titolo);
+        let mut t = o.tela(tele.len());
+        if t.attiva() {
+            int.frontespizio(&mut t, titolo);
+        }
         tele.push(t);
     }
     let primo = tele.len() + 1;
     for (i, pc) in pagine.iter().enumerate() {
-        let mut t = Tela::default();
-        pagina(&mut t, &int, primo + i, pc);
+        let mut t = o.tela(tele.len());
+        if t.attiva() {
+            pagina(&mut t, &int, primo + i, pc);
+        }
         tele.push(t);
     }
-    file_pdf(tele, titolo, o.comprimi)
+    file_pdf(tele, titolo, o)
 }
 
 fn pagina(tela: &mut Tela, int: &Intestazione, numero_pagina: usize, pc: &PaginaCorpo) {

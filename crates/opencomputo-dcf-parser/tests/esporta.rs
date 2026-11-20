@@ -18,6 +18,7 @@ use opencomputo_core::schema::importa_json;
 use opencomputo_dcf_parser::esporta::{OpzioniExport, esporta};
 use opencomputo_dcf_parser::{OpzioniImport, contenitore, importa, struttura};
 use rust_decimal_macros::dec;
+use std::sync::Arc;
 
 const FIXTURE: &str =
     include_str!("../../opencomputo-core/tests/fixtures/progetto_esempio_v5.json");
@@ -153,14 +154,14 @@ fn capitoli_su_tre_livelli_e_testi_speciali() {
     let a11 = capitolo(Some(a1), "A.1.1");
     let a111 = capitolo(Some(a11), "A.1.1.1");
     let v = &mut p.elenco_prezzi.voci;
-    v[0].capitolo = Some(a11);
-    v[1].capitolo = Some(a1);
-    v[2].capitolo = Some(a111);
-    v[3].natura = NaturaVoce::OneriSicurezza;
-    v[3].incidenza_manodopera = Some(Percentuale::new(dec!(12.5)));
-    v[0].descrizione_estesa =
+    Arc::make_mut(&mut v[0]).capitolo = Some(a11);
+    Arc::make_mut(&mut v[1]).capitolo = Some(a1);
+    Arc::make_mut(&mut v[2]).capitolo = Some(a111);
+    Arc::make_mut(&mut v[3]).natura = NaturaVoce::OneriSicurezza;
+    Arc::make_mut(&mut v[3]).incidenza_manodopera = Some(Percentuale::new(dec!(12.5)));
+    Arc::make_mut(&mut v[0]).descrizione_estesa =
         "Scavo <a sezione> con l'uso \"di\" mezzi & attrezzi\nseconda riga, città".into();
-    v[1].prezzo = Prezzo::new(dec!(1234.567));
+    Arc::make_mut(&mut v[1]).prezzo = Prezzo::new(dec!(1234.567));
     let r = esporta(&p, &opzioni()).unwrap();
     assert!(
         r.anomalie

@@ -20,7 +20,7 @@ const MOTORE = process.env.OPENCOMPUTO_BIN || path.join(RADICE, 'target/debug', 
 // Chromium: variabile d'ambiente, poi quello preinstallato in questo ambiente di sviluppo,
 // altrimenti quello scaricato da `npx playwright-core install chromium`.
 const CHROMIUM = process.env.CHROMIUM_PATH
-  || ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find((p) => existsSync(p));
+  || ['/opt/pw-browsers/chromium-1243/chrome-linux64/chrome', '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find((p) => existsSync(p));
 // Come in tauri.conf.json, senza le sorgenti IPC di Tauri.
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const TIPI = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png' };

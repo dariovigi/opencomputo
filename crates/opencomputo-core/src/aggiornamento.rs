@@ -9,6 +9,7 @@
 //! voci dei computi collegate alle voci cambiate.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Deserialize, Serialize};
@@ -264,7 +265,7 @@ fn indice(listino: &Prezzario) -> (HashMap<&str, &VocePrezzario>, Vec<String>) {
                 ripetuti.push(v.codice.clone());
             }
         } else {
-            per_codice.insert(v.codice.as_str(), v);
+            per_codice.insert(v.codice.as_str(), &**v);
         }
     }
     (per_codice, ripetuti)
@@ -668,7 +669,11 @@ pub fn aggiorna_da_listino(
                 else {
                     continue;
                 };
-                if !v.prezzo.riallinea(&elenco, sorgente).is_empty() {
+                if !Arc::make_mut(v)
+                    .prezzo
+                    .riallinea(&elenco, sorgente)
+                    .is_empty()
+                {
                     n += 1;
                 }
             }

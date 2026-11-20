@@ -12,6 +12,7 @@
 //! Vale sempre: righe di dati = voci importate + righe scartate.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use jiff::civil::{Date, DateTime};
 use opencomputo_core::id::GeneratoreId;
@@ -869,7 +870,7 @@ fn costruisci<G: GeneratoreId>(
         // insieme: `Prezzario::aggiungi_voce` scorre tutte le voci a ogni inserimento, e
         // su un listino di decine di migliaia di voci impiega secondi.
         if codici_inseriti.insert(voce.codice.clone()) {
-            prezzario.voci.push(voce);
+            prezzario.voci.push(Arc::new(voce));
         } else {
             anomalie.push(anomalia(
                 Gravita::Errore,

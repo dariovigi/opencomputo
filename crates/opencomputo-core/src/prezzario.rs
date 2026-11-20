@@ -11,6 +11,7 @@
 
 use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::analisi::{AnalisiPrezzo, ParametriAnalisi, RisorsaElementare, RisultatoAnalisi};
 use crate::errore::ErroreDominio;
@@ -177,6 +178,117 @@ impl VocePrezzario {
     }
 }
 
+/// Indice delle voci per codice e per identificativo, costruito alla prima ricerca.
+///
+/// Le voci sono un campo pubblico e possono cambiare senza passare da qui: ogni
+/// risultato dell'indice viene quindi verificato sulla voce vera, e un indice non più
+/// valido viene ricostruito. Una ricerca non trovata nell'indice ripiega sulla scansione
+/// di tutte le voci: il risultato è sempre quello della scansione, l'indice la evita
+/// soltanto quando è possibile.
+#[derive(Default)]
+pub struct IndiceVoci(std::sync::Mutex<Option<Arc<Indice>>>);
+
+#[derive(Debug)]
+struct Indice {
+    voci: usize,
+    per_codice: std::collections::HashMap<String, usize>,
+    per_id: std::collections::HashMap<VocePrezzarioId, usize>,
+}
+
+impl Indice {
+    fn di(voci: &[Arc<VocePrezzario>]) -> Self {
+        let mut per_codice = std::collections::HashMap::with_capacity(voci.len());
+        let mut per_id = std::collections::HashMap::with_capacity(voci.len());
+        for (i, v) in voci.iter().enumerate() {
+            // Codici ripetuti (prezzario non valido): vale il primo, come nella scansione.
+            per_codice.entry(v.codice.clone()).or_insert(i);
+            per_id.entry(v.id).or_insert(i);
+        }
+        Self {
+            voci: voci.len(),
+            per_codice,
+            per_id,
+        }
+    }
+}
+
+impl IndiceVoci {
+    /// Indice valido per `voci` (stesso numero di voci), ricostruito se serve.
+    fn per(&self, voci: &[Arc<VocePrezzario>], ricostruisci: bool) -> Arc<Indice> {
+        let mut g = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match g.as_ref() {
+            Some(i) if !ricostruisci && i.voci == voci.len() => Arc::clone(i),
+            _ => {
+                let i = Arc::new(Indice::di(voci));
+                *g = Some(Arc::clone(&i));
+                i
+            }
+        }
+    }
+
+    /// Posizione della voce che soddisfa `e_lei`, cercata con `chiave` nell'indice.
+    fn cerca(
+        &self,
+        voci: &[Arc<VocePrezzario>],
+        chiave: impl Fn(&Indice) -> Option<usize>,
+        e_lei: impl Fn(&VocePrezzario) -> bool,
+    ) -> Option<usize> {
+        // Pochi elementi: la scansione costa meno dell'indice.
+        if voci.len() < 64 {
+            return voci.iter().position(|v| e_lei(v));
+        }
+        match chiave(&self.per(voci, false)) {
+            Some(i) if voci.get(i).is_some_and(|v| e_lei(v)) => return Some(i),
+            // Indice non più valido (voce spostata o modificata): si ricostruisce.
+            Some(_) => {
+                if let Some(i) = chiave(&self.per(voci, true))
+                    && voci.get(i).is_some_and(|v| e_lei(v))
+                {
+                    return Some(i);
+                }
+            }
+            None => {}
+        }
+        // Non nell'indice: di solito la voce non c'è. La scansione lo conferma; se invece
+        // la trova (codice cambiato o voce sostituita dopo la costruzione), l'indice
+        // viene rifatto per le ricerche successive.
+        let trovata = voci.iter().position(|v| e_lei(v));
+        if trovata.is_some() {
+            self.per(voci, true);
+        }
+        trovata
+    }
+}
+
+impl Clone for IndiceVoci {
+    fn clone(&self) -> Self {
+        // La copia ha le stesse voci: l'indice resta valido.
+        let g = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Self(std::sync::Mutex::new(g.clone()))
+    }
+}
+
+impl std::fmt::Debug for IndiceVoci {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("IndiceVoci")
+    }
+}
+
+/// L'indice non fa parte del valore: due prezzari con le stesse voci sono uguali.
+impl PartialEq for IndiceVoci {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for IndiceVoci {}
+
 /// Prezzario o elenco prezzi.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Prezzario {
@@ -198,7 +310,7 @@ pub struct Prezzario {
     pub capitoli: Vec<CapitoloPrezzario>,
     /// Voci, nell'ordine di presentazione.
     #[serde(default)]
-    pub voci: Vec<VocePrezzario>,
+    pub voci: Vec<Arc<VocePrezzario>>,
     /// Risorse elementari.
     #[serde(default)]
     pub risorse: Vec<RisorsaElementare>,
@@ -211,6 +323,9 @@ pub struct Prezzario {
     /// Provenienza.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provenienza: Option<Provenienza>,
+    /// Indice delle voci per le ricerche (non salvato).
+    #[serde(skip)]
+    pub indice: IndiceVoci,
 }
 
 impl Prezzario {
@@ -229,6 +344,7 @@ impl Prezzario {
             analisi: Vec::new(),
             parametri_analisi: None,
             provenienza: None,
+            indice: IndiceVoci::default(),
         }
     }
 
@@ -244,25 +360,39 @@ impl Prezzario {
     /// Voce per identificativo.
     #[must_use]
     pub fn voce(&self, id: VocePrezzarioId) -> Option<&VocePrezzario> {
-        self.voci.iter().find(|v| v.id == id)
+        let i = self
+            .indice
+            .cerca(&self.voci, |x| x.per_id.get(&id).copied(), |v| v.id == id)?;
+        self.voci.get(i).map(Arc::as_ref)
     }
 
     /// Voce per identificativo, modificabile.
+    ///
+    /// Le voci sono condivise con le copie del progetto (cronologia di «Annulla»): se
+    /// questa lo è, viene prima duplicata, e le altre copie restano invariate.
     pub fn voce_mut(&mut self, id: VocePrezzarioId) -> Option<&mut VocePrezzario> {
-        self.voci.iter_mut().find(|v| v.id == id)
+        let i = self
+            .indice
+            .cerca(&self.voci, |x| x.per_id.get(&id).copied(), |v| v.id == id)?;
+        self.voci.get_mut(i).map(Arc::make_mut)
     }
 
     /// Voce per codice esatto.
     #[must_use]
     pub fn voce_per_codice(&self, codice: &str) -> Option<&VocePrezzario> {
-        self.voci.iter().find(|v| v.codice == codice)
+        let i = self.indice.cerca(
+            &self.voci,
+            |x| x.per_codice.get(codice).copied(),
+            |v| v.codice == codice,
+        )?;
+        self.voci.get(i).map(Arc::as_ref)
     }
 
     /// Ricerca testuale, senza distinzione tra maiuscole e minuscole, su codice
     /// e descrizioni. Tutte le parole del testo devono comparire.
     pub fn cerca<'a>(&'a self, testo: &str) -> impl Iterator<Item = &'a VocePrezzario> + 'a {
         let parole: Vec<String> = testo.split_whitespace().map(str::to_lowercase).collect();
-        self.voci.iter().filter(move |v| {
+        self.voci.iter().map(Arc::as_ref).filter(move |v| {
             let contenuto = format!(
                 "{} {} {}",
                 v.codice, v.descrizione_breve, v.descrizione_estesa
@@ -297,7 +427,7 @@ impl Prezzario {
                 voce.codice
             )));
         }
-        self.voci.push(voce);
+        self.voci.push(Arc::new(voce));
         Ok(())
     }
 
@@ -446,5 +576,84 @@ mod tests {
             p.aggiungi_voce(v),
             Err(ErroreDominio::RiferimentoNonValido(_))
         ));
+    }
+}
+
+#[cfg(test)]
+mod prove_indice {
+    use super::*;
+
+    fn elenco(n: usize) -> Prezzario {
+        let mut p = Prezzario::new(PrezzarioId::da_u128(1), "Prova");
+        for i in 0..n {
+            let mut v = VocePrezzario::new(
+                VocePrezzarioId::da_u128(1000 + i as u128),
+                format!("C.{i:04}"),
+                format!("Voce {i}"),
+                "m",
+                Prezzo::new(rust_decimal::Decimal::ONE),
+            );
+            v.descrizione_estesa = String::new();
+            p.voci.push(Arc::new(v));
+        }
+        p
+    }
+
+    /// L'indice dà sempre lo stesso risultato della scansione, anche quando le voci
+    /// cambiano direttamente nel campo pubblico.
+    #[test]
+    fn indice_coerente_con_la_scansione() {
+        let scansione = |p: &Prezzario, c: &str| p.voci.iter().position(|v| v.codice == c);
+        let per_id = |p: &Prezzario, id| p.voci.iter().position(|v| v.id == id);
+        let pos = |p: &Prezzario, v: Option<&VocePrezzario>| {
+            v.and_then(|v| p.voci.iter().position(|x| std::ptr::eq(&**x, v)))
+        };
+        for n in [0, 3, 63, 64, 500] {
+            let mut p = elenco(n);
+            for c in ["C.0000", "C.0002", "C.0063", "C.0499", "X"] {
+                assert_eq!(pos(&p, p.voce_per_codice(c)), scansione(&p, c), "{n} {c}");
+            }
+            if n < 64 {
+                continue;
+            }
+            // Codice cambiato direttamente: il vecchio non si trova più, il nuovo sì.
+            Arc::make_mut(&mut p.voci[10]).codice = "NUOVO".into();
+            assert_eq!(p.voce_per_codice("C.0010"), None);
+            assert_eq!(pos(&p, p.voce_per_codice("NUOVO")), Some(10));
+            // Voci riordinate e tolte: le posizioni nell'indice non valgono più.
+            p.voci.reverse();
+            p.voci.remove(0);
+            for c in ["C.0000", "C.0100", "C.0498", "C.0499", "NUOVO"] {
+                assert_eq!(pos(&p, p.voce_per_codice(c)), scansione(&p, c), "{c}");
+            }
+            let id = VocePrezzarioId::da_u128(1000 + n as u128 / 2);
+            assert_eq!(pos(&p, p.voce(id)), per_id(&p, id));
+            // Voce sostituita con un'altra con lo stesso numero di voci.
+            let ultima = p.voci.len() - 1;
+            Arc::make_mut(&mut p.voci[ultima]).id = VocePrezzarioId::da_u128(9);
+            assert_eq!(pos(&p, p.voce(VocePrezzarioId::da_u128(9))), Some(ultima));
+            // Modifica attraverso voce_mut.
+            if let Some(v) = p.voce_mut(id) {
+                v.codice = "MOD".into();
+            }
+            assert_eq!(p.voce(id).map(|v| v.codice.as_str()), Some("MOD"));
+            assert_eq!(pos(&p, p.voce_per_codice("MOD")), per_id(&p, id));
+            // La copia ha un indice valido e uguale valore.
+            let q = p.clone();
+            assert_eq!(q, p);
+            assert_eq!(pos(&q, q.voce_per_codice("MOD")), per_id(&q, id));
+        }
+    }
+
+    /// Codici ripetuti (elenco non valido): vale la prima voce, come nella scansione.
+    #[test]
+    fn codici_ripetuti() {
+        let mut p = elenco(100);
+        Arc::make_mut(&mut p.voci[70]).codice = "C.0005".into();
+        assert_eq!(
+            p.voce_per_codice("C.0005")
+                .map(|v| v.descrizione_breve.as_str()),
+            Some("Voce 5")
+        );
     }
 }

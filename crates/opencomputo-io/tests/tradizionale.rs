@@ -18,8 +18,9 @@ use opencomputo_core::progetto::Progetto;
 use opencomputo_core::schema::importa_json;
 use opencomputo_io::formato;
 use opencomputo_io::pdf::RisultatoPdf;
-use opencomputo_io::tradizionale::{self, OpzioniTradizionale};
+use opencomputo_io::tradizionale::{self, OpzioniTradizionale, Uscita};
 use rust_decimal::Decimal;
+use std::sync::Arc;
 
 const FIXTURE: &str =
     include_str!("../../opencomputo-core/tests/fixtures/progetto_esempio_v1.json");
@@ -30,8 +31,10 @@ fn progetto() -> Progetto {
     p.metadati.progettista = Some("Ing. Maria Bianchi".into());
     p.metadati.luogo = Some("Esempio".into());
     p.metadati.data = data_amg(2026, 10, 21);
-    p.elenco_prezzi.voci[0].descrizione_estesa = DESCRIZIONE_LUNGA.into();
-    p.computi[0].voci[0].prezzo.descrizione_estesa = DESCRIZIONE_LUNGA.into();
+    Arc::make_mut(&mut p.elenco_prezzi.voci[0]).descrizione_estesa = DESCRIZIONE_LUNGA.into();
+    Arc::make_mut(&mut p.computi[0].voci[0])
+        .prezzo
+        .descrizione_estesa = DESCRIZIONE_LUNGA.into();
     p
 }
 
@@ -49,7 +52,7 @@ fn progetto_lungo() -> Progetto {
     let base = p.computi[0].voci.clone();
     for i in 0..12 {
         for v in &base {
-            let mut v = v.clone();
+            let mut v = opencomputo_core::computo::VoceComputo::clone(v);
             v.id = g.nuovo();
             for r in &mut v.righi {
                 r.id = g.nuovo();
@@ -57,7 +60,7 @@ fn progetto_lungo() -> Progetto {
             if i % 2 == 1 {
                 v.categorie = AssegnazioneCategorie::default();
             }
-            p.computi[0].voci.push(v);
+            p.computi[0].voci.push(Arc::new(v));
         }
     }
     p
@@ -71,6 +74,7 @@ fn opzioni() -> OpzioniTradizionale {
             "Via Roma 1 - Esempio".into(),
         ],
         comprimi: false,
+        uscita: Uscita::Tutto,
         ..OpzioniTradizionale::default()
     }
 }
@@ -428,7 +432,7 @@ fn computo_inesistente() {
 fn voce_spezzata_riporta_la_quantita_progressiva() {
     let mut p = progetto();
     let mut g = GeneratoreSequenziale::new(50_000);
-    let voce = &mut p.computi[0].voci[0];
+    let voce = Arc::make_mut(&mut p.computi[0].voci[0]);
     let base = voce.righi.clone();
     for _ in 0..60 {
         for r in &base {
@@ -464,8 +468,12 @@ fn computo_con_incidenze_e_riepilogo_finale() {
     use opencomputo_core::numeri::Percentuale;
     use rust_decimal_macros::dec;
     let mut p = progetto();
-    p.computi[0].voci[1].prezzo.incidenza_sicurezza = Some(Percentuale::new(dec!(3)));
-    p.computi[0].voci[2].prezzo.incidenza_sicurezza = Some(Percentuale::new(dec!(2.5)));
+    Arc::make_mut(&mut p.computi[0].voci[1])
+        .prezzo
+        .incidenza_sicurezza = Some(Percentuale::new(dec!(3)));
+    Arc::make_mut(&mut p.computi[0].voci[2])
+        .prezzo
+        .incidenza_sicurezza = Some(Percentuale::new(dec!(2.5)));
     let id = p.computi[0].id;
     let base = tradizionale::computo(&p, id, &opzioni()).unwrap();
     let o = OpzioniTradizionale {
@@ -716,7 +724,9 @@ fn computo_tradizionale_con_la_sola_incidenza_della_sicurezza() {
     use opencomputo_core::numeri::Percentuale;
     use rust_decimal_macros::dec;
     let mut p = progetto();
-    p.computi[0].voci[1].prezzo.incidenza_sicurezza = Some(Percentuale::new(dec!(3)));
+    Arc::make_mut(&mut p.computi[0].voci[1])
+        .prezzo
+        .incidenza_sicurezza = Some(Percentuale::new(dec!(3)));
     let id = p.computi[0].id;
     let o = OpzioniTradizionale {
         incidenze: tradizionale::Incidenze {
@@ -804,9 +814,10 @@ fn anteprima_svg_uguale_al_pdf() {
 #[test]
 fn anteprima_svg_con_caratteri_speciali() {
     let mut p = progetto();
-    p.elenco_prezzi.voci[0].descrizione_breve =
+    Arc::make_mut(&mut p.elenco_prezzi.voci[0]).descrizione_breve =
         "Tubo Ø 20 <prova> & \"altro\" </text><script>".into();
-    p.elenco_prezzi.voci[0].descrizione_estesa = p.elenco_prezzi.voci[0].descrizione_breve.clone();
+    Arc::make_mut(&mut p.elenco_prezzi.voci[0]).descrizione_estesa =
+        p.elenco_prezzi.voci[0].descrizione_breve.clone();
     let r = tradizionale::elenco_prezzi(&p, &opzioni());
     let tutto = r.anteprima.concat();
     assert!(!tutto.contains("<script") && !tutto.contains("<prova>"));
@@ -814,4 +825,45 @@ fn anteprima_svg_con_caratteri_speciali() {
         tutto.contains("&lt;prova&gt; &amp; &quot;altro&quot;"),
         "testo non trovato"
     );
+}
+
+/// Le uscite della stampa sono coerenti: il PDF da solo è lo stesso del PDF con
+/// l'anteprima, l'anteprima di alcune pagine è la parte corrispondente di quella completa
+/// (numero di pagine sempre esatto) e senza PDF.
+#[test]
+fn uscite_coerenti() {
+    let p = progetto();
+    let id = p.computi[0].id;
+    let con = |uscita| OpzioniTradizionale {
+        uscita,
+        ..opzioni()
+    };
+    let tutto = tradizionale::computo(&p, id, &opzioni()).unwrap();
+    assert!(tutto.pagine >= 3, "{}", tutto.pagine);
+    let solo_pdf = tradizionale::computo(&p, id, &con(Uscita::Pdf)).unwrap();
+    assert_eq!(solo_pdf.byte, tutto.byte);
+    assert_eq!(solo_pdf.pagine, tutto.pagine);
+    assert!(solo_pdf.anteprima.is_empty());
+    for (prima, quante) in [(0, 1), (1, 2), (tutto.pagine - 1, 6), (tutto.pagine, 3)] {
+        let a = tradizionale::computo(&p, id, &con(Uscita::Anteprima { prima, quante })).unwrap();
+        assert!(a.byte.is_empty());
+        assert_eq!(a.pagine, tutto.pagine);
+        let attese: Vec<String> = tutto
+            .anteprima
+            .iter()
+            .skip(prima)
+            .take(quante)
+            .cloned()
+            .collect();
+        assert_eq!(a.anteprima, attese, "pagine da {prima}");
+    }
+    let e = tradizionale::elenco_prezzi(
+        &p,
+        &con(Uscita::Anteprima {
+            prima: 1,
+            quante: 1,
+        }),
+    );
+    let tutto = tradizionale::elenco_prezzi(&p, &opzioni());
+    assert_eq!(e.anteprima.as_slice(), &tutto.anteprima[1..2]);
 }

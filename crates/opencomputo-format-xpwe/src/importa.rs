@@ -12,6 +12,7 @@
 //!   di documento: lo stesso file con lo stesso generatore produce lo stesso progetto.
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 use jiff::civil::DateTime;
 use opencomputo_core::analisi::{AnalisiPrezzo, BaseUtile, OrigineRigaAnalisi, RigaAnalisi};
@@ -992,7 +993,11 @@ fn collega_vedi_voce<G: GeneratoreId>(
                 continue;
             }
         };
-        let Some(rigo) = computo.voci.get_mut(iv).and_then(|v| v.righi.get_mut(ir)) else {
+        let Some(rigo) = computo
+            .voci
+            .get_mut(iv)
+            .and_then(|v| Arc::make_mut(v).righi.get_mut(ir))
+        else {
             continue;
         };
         let originale = rigo.clone();
@@ -1006,7 +1011,11 @@ fn collega_vedi_voce<G: GeneratoreId>(
         let mut cambiato = false;
         let mut restano = Vec::with_capacity(tentativi.len());
         for (iv, ir, originale, d, variante) in tentativi {
-            let Some(rigo) = computo.voci.get_mut(iv).and_then(|v| v.righi.get_mut(ir)) else {
+            let Some(rigo) = computo
+                .voci
+                .get_mut(iv)
+                .and_then(|v| Arc::make_mut(v).righi.get_mut(ir))
+            else {
                 continue;
             };
             let calcolata = rigo.calcola_con(regole, &quantita).ok().flatten();
@@ -1263,7 +1272,7 @@ fn importa_voce_elenco<G: GeneratoreId>(
     let incidenza_manodopera = percentuale_facoltativa(cx, item, "IncMDO", &percorso);
     let incidenza_sicurezza = percentuale_facoltativa(cx, item, "IncSIC", &percorso);
     let id: VocePrezzarioId = cx.generatore.nuovo();
-    progetto.elenco_prezzi.voci.push(VocePrezzario {
+    progetto.elenco_prezzi.voci.push(Arc::new(VocePrezzario {
         id,
         codice,
         descrizione_breve: breve.to_owned(),
@@ -1277,7 +1286,7 @@ fn importa_voce_elenco<G: GeneratoreId>(
         analisi: None,
         nuovo_prezzo: None,
         provenienza: Some(provenienza(Some(id_xpwe.to_owned()), dati)),
-    });
+    }));
     voci_ep.insert(id_xpwe.to_owned(), id);
     cx.statistiche.voci_elenco += 1;
 }
@@ -1344,7 +1353,7 @@ fn importa_analisi<G: GeneratoreId>(
         let riferita = riferimento(c, "IDEP")
             .and_then(|r| voci_ep.get(&r))
             .filter(|id| **id != voce_id)
-            .and_then(|id| progetto.elenco_prezzi.voci.iter().find(|v| v.id == *id));
+            .and_then(|id| progetto.elenco_prezzi.voce(*id));
         let o = |proprio: String, della_voce: fn(&VocePrezzario) -> &str| {
             if proprio.is_empty() {
                 riferita.map(della_voce).unwrap_or_default().to_owned()
@@ -1482,12 +1491,7 @@ fn importa_analisi<G: GeneratoreId>(
     }
     let id = analisi.id;
     progetto.elenco_prezzi.analisi.push(analisi);
-    if let Some(v) = progetto
-        .elenco_prezzi
-        .voci
-        .iter_mut()
-        .find(|v| v.id == voce_id)
-    {
+    if let Some(v) = progetto.elenco_prezzi.voce_mut(voce_id) {
         v.analisi = Some(id);
     }
     cx.statistiche.analisi += 1;
@@ -1664,7 +1668,7 @@ fn importa_voce_computo<G: GeneratoreId>(
             .or_insert(Some(voce.id));
     }
     voce.provenienza = Some(provenienza(id_xpwe, dati));
-    computo.voci.push(voce);
+    computo.voci.push(Arc::new(voce));
     cx.statistiche.voci_computo += 1;
 }
 

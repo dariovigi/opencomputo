@@ -2,6 +2,7 @@
 
 use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::classificazione::AssegnazioneCategorie;
 use crate::errore::ErroreLocalizzato;
@@ -83,14 +84,17 @@ impl RegistrazioneLibretto {
 pub struct LibrettoMisure {
     /// Registrazioni, nell'ordine di inserimento.
     #[serde(default)]
-    pub registrazioni: Vec<RegistrazioneLibretto>,
+    pub registrazioni: Vec<Arc<RegistrazioneLibretto>>,
 }
 
 impl LibrettoMisure {
     /// Registrazione per identificativo.
     #[must_use]
     pub fn registrazione(&self, id: RegistrazioneId) -> Option<&RegistrazioneLibretto> {
-        self.registrazioni.iter().find(|r| r.id == id)
+        self.registrazioni
+            .iter()
+            .find(|r| r.id == id)
+            .map(Arc::as_ref)
     }
 
     /// Prossimo numero d'ordine disponibile.

@@ -16,6 +16,7 @@
 //! misura accettano anche espressioni (`"2*(3,50+0,30)"`).
 
 use std::collections::{BTreeSet, HashMap};
+use std::sync::Arc;
 
 use jiff::civil::Date;
 use opencomputo_core::aggiornamento::{
@@ -200,15 +201,20 @@ fn rendi_statici_i_riferimenti(
         .voci
         .iter()
         .filter(|v| !voci.contains(&v.id))
-        .flat_map(VoceComputo::voci_citate)
+        .flat_map(|v| v.voci_citate())
         .filter(|id| voci.contains(id))
         .collect();
     if citate.is_empty() {
         return Ok(0);
     }
     let statici = statici_per(c, &citate, regole)?;
+    // Solo le voci che citano davvero: le altre restano condivise con le copie del
+    // progetto (cronologia di «Annulla»).
     Ok(sostituisci_collegamenti(
-        c.voci.iter_mut().filter(|v| !voci.contains(&v.id)),
+        c.voci
+            .iter_mut()
+            .filter(|v| !voci.contains(&v.id) && v.voci_citate().any(|id| citate.contains(&id)))
+            .map(Arc::make_mut),
         &statici,
     ))
 }
@@ -1329,6 +1335,7 @@ fn voce_mut(c: &mut Computo, voce: RifVoce) -> Result<&mut VoceComputo, String> 
     let i = indice_voce(c, voce)?;
     c.voci
         .get_mut(i)
+        .map(Arc::make_mut)
         .ok_or_else(|| "voce inesistente".to_owned())
 }
 
@@ -1640,6 +1647,9 @@ pub fn applica<G: GeneratoreId>(
             if let Some(m) = modalita {
                 r.modalita = *m;
             }
+            // Fuori dai limiti nessun importo sarebbe calcolabile: rifiutato con ogni
+            // politica.
+            r.valida().map_err(|e| e.to_string())?;
             Ok("regole di arrotondamento aggiornate".into())
         }
         Comando::AggiungiCapitolo {
@@ -2223,7 +2233,11 @@ pub fn applica<G: GeneratoreId>(
                 }
             } else {
                 for i in &indici {
-                    let mut v = origine.voci.get(*i).cloned().ok_or("voce inesistente")?;
+                    let mut v = origine
+                        .voci
+                        .get(*i)
+                        .map(|v| VoceComputo::clone(v))
+                        .ok_or("voce inesistente")?;
                     let nuovo = g.nuovo();
                     nuovi_id.insert(v.id, nuovo);
                     v.id = nuovo;

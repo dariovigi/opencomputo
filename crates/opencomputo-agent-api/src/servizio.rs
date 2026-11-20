@@ -315,11 +315,28 @@ fn errore_file(percorso: &Path, e: &io::Error) -> ErroreApplicazione {
     }
 }
 
-/// Legge un file intero.
+/// Dimensione massima di un file da importare (XPWE, DCF, listini). I file reali sono di
+/// pochi MB; l'import ne costruisce una rappresentazione in memoria più grande del file.
+pub const IMPORT_MASSIMO: u64 = 256 << 20;
+
+/// Legge un file intero, entro [`IMPORT_MASSIMO`].
 ///
 /// # Errors
-/// File non leggibile.
+/// File non leggibile o troppo grande.
 pub fn leggi(percorso: &Path) -> Result<Vec<u8>, ErroreApplicazione> {
+    let dimensione = std::fs::metadata(percorso)
+        .map_err(|e| errore_file(percorso, &e))?
+        .len();
+    if dimensione > IMPORT_MASSIMO {
+        return Err(ErroreApplicazione::File {
+            messaggio: format!(
+                "{}: file di {} MB, oltre il massimo di {} MB per un import",
+                percorso.display(),
+                dimensione >> 20,
+                IMPORT_MASSIMO >> 20
+            ),
+        });
+    }
     std::fs::read(percorso).map_err(|e| errore_file(percorso, &e))
 }
 

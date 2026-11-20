@@ -3,6 +3,50 @@
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.1.0/); versioni
 secondo il versionamento semantico.
 
+## [Non rilasciato]
+
+Revisione di prestazioni, difetti e vulnerabilità (2026-11-20; ADR 0026, dettagli e misure
+in `docs/STATO.md`).
+
+### Prestazioni (computo di 20.000 voci e 100.000 righi)
+
+* Modifica di un rigo da 460 a 190 ms; la memoria resta stabile durante le modifiche
+  (515 MB dopo 20 modifiche, prima 2,7 GB e oltre 4 GB con 50 passi di annullamento):
+  gli stati conservati per annulla e ripristina condividono le voci non modificate.
+* Riepilogo e controlli (`info`, `valida`) immediati: problemi e totali sono calcolati una
+  volta per ogni stato del progetto.
+* Apertura di un `.ocp` compresso da 2,2 a 0,57 s; salvataggio da 1,8 a 0,9 s; import
+  XPWE da 2,0 s e 718 MB a 1,0 s e 359 MB.
+* Anteprima nel modello tradizionale da 2 s a 0,4 s (si disegnano solo le pagine
+  mostrate); PDF tradizionale da 2,1 a 1,2 s.
+* Ricerca delle voci di elenco per codice e identificativo con un indice.
+
+### Sicurezza e robustezza
+
+* Limiti di dimensione: `.ocp` fino a 512 MB (controllati prima di leggere e durante la
+  decompressione: un file compresso piccolo non può più esaurire la memoria), file da
+  importare fino a 256 MB.
+* Un file con identificativi WBS ripetuti che chiudono un ciclo esauriva la memoria
+  (vista dei dati generali) o la pila (riepilogo WBS dei report, cronoprogramma): ogni
+  nodo ora si visita una volta sola e la validazione segnala il problema.
+* Regole di arrotondamento: `imposta_regole` rifiuta più di 10 decimali con ogni
+  politica (con la politica permissiva un miliardo di decimali faceva chiedere 1 GB al
+  report Excel); un file con regole fuori misura si apre senza arrestare il programma e
+  report ed export lo rifiutano con un messaggio chiaro.
+* Quantità e importi di voci e registrazioni oltre 10^15 sono errori di calcolo: valori
+  vicini alla capacità del tipo decimale facevano arrestare il calcolo della produzione
+  mensile del cronoprogramma, ora protetto anche da operazioni controllate.
+
+### Test aggiunti
+
+* Sequenze casuali di comandi (tutti i 57 comandi documentati, con valori limite) con
+  annulla e ripristina e verifica di atomicità, prova, stato in memoria, salvataggio e
+  rilettura, viste e report.
+* File di progetto danneggiati (tutte le versioni dello schema, valori, riferimenti,
+  byte, compressione) aperti e usati attraverso il servizio JSON.
+* Coerenza delle uscite della stampa tradizionale, limiti dei file, indice dell'elenco
+  prezzi, lettura diretta dei file correnti.
+
 ## [0.1.2] — 2026-11-18
 
 Prima versione con i pacchetti per Windows, macOS e Linux, non firmati. I tag `v0.1.0`

@@ -129,7 +129,13 @@ pub fn progetto(p: &Progetto) -> VistaProgetto {
         .rev()
         .map(|n| (n, 0usize))
         .collect();
+    // Un file danneggiato può avere identificativi ripetuti, quindi cicli raggiungibili
+    // dalle radici: ogni nodo si visita una volta sola.
+    let mut visti = std::collections::HashSet::new();
     while let Some((n, livello)) = pila.pop() {
+        if !visti.insert(n.id) {
+            continue;
+        }
         wbs.push(VistaNodoWbs {
             codice_completo: p
                 .wbs
@@ -272,7 +278,7 @@ pub fn elenco(pr: &Prezzario, testo: Option<&str>) -> VistaElenco {
     };
     let voci = match testo.map(str::trim).filter(|t| !t.is_empty()) {
         Some(t) => pr.cerca(t).map(riga).collect(),
-        None => pr.voci.iter().map(riga).collect(),
+        None => pr.voci.iter().map(|v| riga(v)).collect(),
     };
     VistaElenco {
         nome: pr.nome.clone(),

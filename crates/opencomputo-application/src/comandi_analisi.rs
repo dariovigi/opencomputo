@@ -11,6 +11,7 @@ use opencomputo_core::numeri::Quantita;
 use opencomputo_core::prezzario::{CriterioNuovoPrezzo, NuovoPrezzo};
 use opencomputo_core::progetto::Progetto;
 use rust_decimal::Decimal;
+use std::sync::Arc;
 
 use crate::comandi::{
     Comando, FattoreIngresso, OggettoAggiornamento, RigaAnalisiIngresso, non_trovato, voce_elenco,
@@ -492,7 +493,8 @@ pub(crate) fn applica<G: GeneratoreId>(
                             analizzate += 1;
                             continue;
                         }
-                        v.prezzo = nuovo(v.prezzo)?;
+                        let prezzo = nuovo(v.prezzo)?;
+                        Arc::make_mut(v).prezzo = prezzo;
                         aggiornati += 1;
                     }
                 }
@@ -658,12 +660,17 @@ pub(crate) fn applica<G: GeneratoreId>(
                     ids.push(voce.id);
                 }
                 for voce in &mut p.elenco_prezzi.voci {
-                    if let Some(np) = voce.nuovo_prezzo.as_mut() {
-                        if ids.contains(&voce.id) {
-                            np.verbale = Some(n);
-                        } else if np.verbale == Some(n) {
-                            np.verbale = None;
-                        }
+                    // Solo le voci che cambiano: le altre restano condivise.
+                    let verbale = voce.nuovo_prezzo.as_ref().map(|np| np.verbale);
+                    let nuovo = match verbale {
+                        Some(_) if ids.contains(&voce.id) => Some(Some(n)),
+                        Some(Some(x)) if x == n => Some(None),
+                        _ => None,
+                    };
+                    if let Some(valore) = nuovo.filter(|v| Some(*v) != verbale)
+                        && let Some(np) = Arc::make_mut(voce).nuovo_prezzo.as_mut()
+                    {
+                        np.verbale = valore;
                     }
                 }
             }
@@ -682,10 +689,11 @@ pub(crate) fn applica<G: GeneratoreId>(
                 .rimuovi_verbale_nuovi_prezzi(*numero)
                 .map_err(|e| e.to_string())?;
             for voce in &mut p.elenco_prezzi.voci {
-                if let Some(np) = voce
+                if voce
                     .nuovo_prezzo
-                    .as_mut()
-                    .filter(|x| x.verbale == Some(*numero))
+                    .as_ref()
+                    .is_some_and(|x| x.verbale == Some(*numero))
+                    && let Some(np) = Arc::make_mut(voce).nuovo_prezzo.as_mut()
                 {
                     np.verbale = None;
                 }

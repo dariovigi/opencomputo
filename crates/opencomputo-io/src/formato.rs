@@ -22,6 +22,8 @@ pub fn numero_semplice(valore: Decimal, decimali: u32, decimale: char) -> String
 
 fn componi(valore: Decimal, decimali: u32, migliaia: Option<char>, decimale: char) -> String {
     let mut v = valore;
+    // Oltre la scala massima la libreria dei decimali non garantisce il risultato.
+    let decimali = decimali.min(Decimal::MAX_SCALE);
     if v.scale() < decimali {
         v.rescale(decimali);
     }
@@ -61,6 +63,7 @@ pub fn numero_apice(valore: Decimal, decimali: u32) -> String {
 #[must_use]
 pub fn in_lettere(valore: Decimal, decimali: u32) -> String {
     let mut v = valore.abs();
+    let decimali = decimali.min(Decimal::MAX_SCALE);
     if v.scale() < decimali {
         v.rescale(decimali);
     }

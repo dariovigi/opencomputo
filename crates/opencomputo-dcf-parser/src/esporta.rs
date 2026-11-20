@@ -184,6 +184,7 @@ fn ridotta(testo: &str) -> String {
 /// Numero con il punto decimale, scala estesa ai decimali indicati.
 fn numero(v: Decimal, decimali: u32) -> String {
     let mut v = v;
+    let decimali = decimali.min(Decimal::MAX_SCALE);
     if v.scale() < decimali {
         v.rescale(decimali);
     }

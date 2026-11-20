@@ -16,6 +16,7 @@ use common::*;
 use opencomputo_core::prelude::*;
 use opencomputo_core::riferimento::Riferimento;
 use rust_decimal_macros::dec;
+use std::sync::Arc;
 
 fn imp(v: Decimal) -> Importo {
     Importo::new(v)
@@ -105,8 +106,8 @@ fn totali_per_categoria_e_wbs() {
 fn quote_di_manodopera_e_sicurezza_per_categorie_e_wbs() {
     let mut p = progetto_di_esempio();
     let c = p.computi.iter_mut().find(|c| c.id == COMPUTO).unwrap();
-    c.voci[1].prezzo.incidenza_sicurezza = Some(Percentuale::new(dec!(3)));
-    c.voci[2].prezzo.incidenza_sicurezza = Some(Percentuale::new(dec!(2.5)));
+    Arc::make_mut(&mut c.voci[1]).prezzo.incidenza_sicurezza = Some(Percentuale::new(dec!(3)));
+    Arc::make_mut(&mut c.voci[2]).prezzo.incidenza_sicurezza = Some(Percentuale::new(dec!(2.5)));
     let r = p.calcola_computo(COMPUTO).unwrap();
 
     // 7 517,82 × 3 % = 225,5346 → 225,53; 4 668,30 × 2,5 % = 116,7075 → 116,71.

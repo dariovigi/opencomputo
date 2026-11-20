@@ -193,6 +193,7 @@ pub fn esporta_xpwe(
     p: &Progetto,
     computo: Option<&str>,
 ) -> Result<opencomputo_format_xpwe::RisultatoExport, ErroreApplicazione> {
+    regole_valide(p)?;
     let id = trova_computo(p, computo)?;
     opencomputo_format_xpwe::esporta(p, id).map_err(|e| ErroreApplicazione::Esportazione {
         messaggio: e.to_string(),
@@ -201,6 +202,17 @@ pub fn esporta_xpwe(
 
 fn vero() -> bool {
     true
+}
+
+/// Le regole di arrotondamento entro i limiti: un progetto letto da un file può averne
+/// di fuori misura (es. un miliardo di decimali), che renderebbero ogni importo
+/// incalcolabile e i formati numerici dei report enormi.
+fn regole_valide(p: &Progetto) -> Result<(), ErroreApplicazione> {
+    p.regole
+        .valida()
+        .map_err(|e| ErroreApplicazione::Richiesta {
+            messaggio: format!("regole di arrotondamento non valide: {e}"),
+        })
 }
 
 /// Esporta l'elenco prezzi in DCF (sperimentale, ADR 0016). Le date del contenitore
@@ -212,6 +224,7 @@ pub fn esporta_dcf(
     p: &Progetto,
     data: Option<jiff::civil::Date>,
 ) -> Result<opencomputo_dcf_parser::esporta::RisultatoExport, ErroreApplicazione> {
+    regole_valide(p)?;
     let giorno = p
         .metadati
         .data
@@ -284,6 +297,7 @@ impl StampaTradizionale {
             comprimi: true,
             incidenze: report::Incidenze::default(),
             firma: None,
+            uscita: tradizionale::Uscita::Pdf,
         }
     }
 }
@@ -478,6 +492,7 @@ pub fn documento(
     tipo: &TipoReport,
     o: &OpzioniReport,
 ) -> Result<(String, Documento), ErroreApplicazione> {
+    regole_valide(p)?;
     Ok(match tipo {
         TipoReport::Computo {
             computo,
@@ -639,7 +654,9 @@ fn report_tradizionale(
     tipo: &TipoReport,
     formato: FormatoReport,
     o: &OpzioniReport,
+    uscita: tradizionale::Uscita,
 ) -> Result<Option<(String, pdf::RisultatoPdf)>, ErroreApplicazione> {
+    regole_valide(p)?;
     let richiesta = |messaggio: &str| ErroreApplicazione::Richiesta {
         messaggio: messaggio.to_owned(),
     };
@@ -651,7 +668,10 @@ fn report_tradizionale(
             "il modello tradizionale è disponibile solo in PDF",
         ));
     }
-    let opzioni = stampa.opzioni(o);
+    let opzioni = OpzioniTradizionale {
+        uscita,
+        ..stampa.opzioni(o)
+    };
     Ok(Some(match tipo {
         TipoReport::Computo {
             computo,
@@ -724,20 +744,21 @@ pub fn anteprima_tradizionale(
     prima: usize,
     quante: usize,
 ) -> Result<Option<AnteprimaPagine>, ErroreApplicazione> {
-    let Some((nome, r)) = report_tradizionale(p, tipo, FormatoReport::Pdf, o)? else {
+    let prima = prima.max(1);
+    // Si impagina tutto il documento (il numero delle pagine è esatto) ma si disegnano
+    // solo le pagine richieste, e senza il file PDF.
+    let uscita = tradizionale::Uscita::Anteprima {
+        prima: prima - 1,
+        quante,
+    };
+    let Some((nome, r)) = report_tradizionale(p, tipo, FormatoReport::Pdf, o, uscita)? else {
         return Ok(None);
     };
-    let prima = prima.max(1);
     Ok(Some(AnteprimaPagine {
         nome,
         pagine_totali: r.pagine,
         prima,
-        pagine: r
-            .anteprima
-            .into_iter()
-            .skip(prima - 1)
-            .take(quante)
-            .collect(),
+        pagine: r.anteprima,
     }))
 }
 
@@ -752,6 +773,7 @@ pub fn report(
     formato: FormatoReport,
     o: &OpzioniReport,
 ) -> Result<Vec<FileReport>, ErroreApplicazione> {
+    regole_valide(p)?;
     if let TipoReport::Cronoprogramma { gantt: true, .. } = tipo {
         if formato != FormatoReport::Pdf {
             return Err(ErroreApplicazione::Richiesta {
@@ -771,7 +793,7 @@ pub fn report(
                 .byte,
         }]);
     }
-    if let Some((nome, r)) = report_tradizionale(p, tipo, formato, o)? {
+    if let Some((nome, r)) = report_tradizionale(p, tipo, formato, o, tradizionale::Uscita::Pdf)? {
         return Ok(vec![FileReport {
             nome: format!("{nome}.pdf"),
             byte: r.byte,

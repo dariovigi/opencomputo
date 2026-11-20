@@ -12,7 +12,8 @@ license = "EUPL-1.2"
 [workspace.dependencies]
 rust_decimal = { version = "1.36", default-features = false, features = ["std", "serde", "maths"] }
 rust_decimal_macros = "1.36"
-serde = { version = "1.0", features = ["derive"] }
+# `rc`: liste di voci condivise tra le copie del progetto (`Arc`), serializzate come prima.
+serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 thiserror = "2.0"
 uuid = { version = "1.10", default-features = false, features = ["std", "serde"] }

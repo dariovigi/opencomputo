@@ -14,6 +14,7 @@ use opencomputo_core::id::GeneratoreSequenziale;
 use opencomputo_core::prelude::*;
 use opencomputo_format_xpwe::{OpzioniImport, esporta, importa};
 use rust_decimal_macros::dec;
+use std::sync::Arc;
 
 #[test]
 fn xpwe_modello_xpwe_senza_perdite() {
@@ -78,6 +79,7 @@ fn le_modifiche_al_modello_arrivano_nell_export() {
         .voci
         .iter_mut()
         .find(|v| v.codice == "E.01.010")
+        .map(Arc::make_mut)
         .unwrap();
     voce.prezzo = Prezzo::new(dec!(9.50));
     voce.natura = NaturaVoce::OneriSicurezza;
@@ -180,7 +182,7 @@ fn progetto_nativo() -> (Progetto, ComputoId) {
     v2.righi = vec![RigoMisura::misura(g.nuovo(), "Perimetro").con_lunghezza("2*(24+14)")];
     let mut v3 = VoceComputo::new(g.nuovo(), PrezzoApplicato::da_voce(&p.elenco_prezzi, &sic));
     v3.righi = vec![RigoMisura::misura(g.nuovo(), "").con_parti(dec!(1))];
-    c.voci = vec![v1, v2, v3];
+    c.voci = vec![Arc::new(v1), Arc::new(v2), Arc::new(v3)];
     let id = c.id;
     p.aggiungi_computo(c).unwrap();
     (p, id)
@@ -269,7 +271,8 @@ fn computo_inesistente_o_non_calcolabile() {
         esporta(&p, altro),
         Err(opencomputo_format_xpwe::ErroreXpwe::ComputoInesistente(_))
     ));
-    p.computi[0].voci[1].righi[0].lunghezza = Some(Fattore::Espressione("2*(".into()));
+    Arc::make_mut(&mut p.computi[0].voci[1]).righi[0].lunghezza =
+        Some(Fattore::Espressione("2*(".into()));
     assert!(matches!(
         esporta(&p, id),
         Err(opencomputo_format_xpwe::ErroreXpwe::Calcolo(_))
@@ -283,12 +286,12 @@ fn vedi_voce_inseriti_in_opencomputo_esportati_con_la_quantita() {
     let c = r.progetto.computo_mut(r.computo).unwrap();
     let scavo = c.voci[0].id;
     // Nella recinzione: metà dello scavo (243,00) e un «vedi voce» statico con formula.
-    c.voci[3].righi.push(
+    Arc::make_mut(&mut c.voci[3]).righi.push(
         RigoMisura::misura(RigoMisuraId::da_u128(90_001), "Metà scavo")
             .con_vedi_voce(VediVoce::Collegata(scavo))
             .con_parti(dec!(0.5)),
     );
-    c.voci[3].righi.push(
+    Arc::make_mut(&mut c.voci[3]).righi.push(
         RigoMisura::misura(RigoMisuraId::da_u128(90_002), "Da altro computo")
             .con_vedi_voce(VediVoce::Statica {
                 quantita: dec!(10),

@@ -4,6 +4,7 @@
 
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use opencomputo_assistente::candidati::cerca_ibrida;
@@ -65,7 +66,7 @@ fn prezzario_grande() -> Prezzario {
             Prezzo::new(Decimal::from(n % 500 + 1)),
         );
         v.capitolo = Some(capitoli[n % 300]);
-        p.voci.push(v);
+        p.voci.push(Arc::new(v));
     }
     p
 }

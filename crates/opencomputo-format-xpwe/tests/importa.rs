@@ -14,6 +14,7 @@ use opencomputo_core::misura::VediVoce;
 use opencomputo_core::prelude::*;
 use opencomputo_core::provenienza::FormatoOrigine;
 use rust_decimal_macros::dec;
+use std::sync::Arc;
 
 #[test]
 fn totali_verificati_a_mano() {
@@ -132,7 +133,7 @@ fn righi_deduzioni_commenti_parziali_e_vedi_voce() {
     assert_eq!(dati.get(&format!("rigo:{}/=IDVV", vedi.id)).unwrap(), "1");
     // Cambia la voce citata, cambia il rinterro.
     let mut p = r.progetto.clone();
-    let scavo = &mut p.computo_mut(r.computo).unwrap().voci[0];
+    let scavo = Arc::make_mut(&mut p.computo_mut(r.computo).unwrap().voci[0]);
     scavo.righi.truncate(1);
     let q = |p: &Progetto, i: usize| {
         let c = p.computo(r.computo).unwrap();

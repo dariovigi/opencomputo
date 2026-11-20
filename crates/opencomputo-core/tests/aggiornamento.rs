@@ -18,6 +18,7 @@ use opencomputo_core::aggiornamento::{
 use opencomputo_core::partita::CampoPrezzo;
 use opencomputo_core::prelude::*;
 use rust_decimal_macros::dec;
+use std::sync::Arc;
 
 /// Listino nuovo: scavo a 8,80 con incidenza della sicurezza, calcestruzzo uguale,
 /// muratura assente, recinzione a 12,50 con descrizione nuova, una voce in più.
@@ -26,7 +27,7 @@ fn listino() -> Prezzario {
     l.id = PrezzarioId::da_u128(50_000);
     l.nome = "Prezzario regionale 2027".into();
     l.voci.retain(|v| v.codice != "C.03.020");
-    for (i, v) in l.voci.iter_mut().enumerate() {
+    for (i, v) in l.voci.iter_mut().map(Arc::make_mut).enumerate() {
         v.id = VocePrezzarioId::da_u128(50_001 + i as u128);
         match v.codice.as_str() {
             "A.01.001" => {
@@ -40,10 +41,10 @@ fn listino() -> Prezzario {
             _ => {}
         }
     }
-    let mut nuova = l.voci[0].clone();
+    let mut nuova = VocePrezzario::clone(&l.voci[0]);
     nuova.id = VocePrezzarioId::da_u128(50_100);
     nuova.codice = "Z.99.001".into();
-    l.voci.push(nuova);
+    l.voci.push(Arc::new(nuova));
     l
 }
 
@@ -181,7 +182,7 @@ fn senza_riallineamento_i_computi_restano_e_gli_errori_non_modificano() {
 fn prefisso_sostituito_e_codice_del_listino() {
     let mut p = progetto_di_esempio();
     let mut l = listino();
-    for v in &mut l.voci {
+    for v in l.voci.iter_mut().map(Arc::make_mut) {
         v.codice = v.codice.replacen("A.", "X.", 1);
     }
     let prefisso = SostituzionePrefisso {
@@ -227,18 +228,18 @@ fn risorse_aggiornate_e_analisi_ricalcolate() {
     operaio.prezzo = Prezzo::new(dec!(34.00));
     l.risorse.push(operaio);
     // Il premiscelato è nel listino come voce.
-    let mut premiscelato = l.voci[0].clone();
+    let mut premiscelato = VocePrezzario::clone(&l.voci[0]);
     premiscelato.id = VocePrezzarioId::da_u128(50_200);
     premiscelato.codice = "MA.20".into();
     premiscelato.descrizione_breve = "Intonaco premiscelato in sacchi".into();
     premiscelato.unita_misura = "kg".into();
     premiscelato.prezzo = Prezzo::new(dec!(0.55));
-    l.voci.push(premiscelato);
+    l.voci.push(Arc::new(premiscelato));
     // Il nuovo prezzo analizzato compare nel listino.
-    let mut np = l.voci[0].clone();
+    let mut np = VocePrezzario::clone(&l.voci[0]);
     np.id = VocePrezzarioId::da_u128(50_300);
     np.codice = "NP.01".into();
-    l.voci.push(np);
+    l.voci.push(Arc::new(np));
 
     let c = confronta_listino(&p, &l, None);
     let r: Vec<_> = c

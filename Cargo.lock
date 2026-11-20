@@ -2329,6 +2329,7 @@ name = "opencomputo-agent-api"
 version = "0.1.2"
 dependencies = [
  "clap",
+ "flate2",
  "jiff",
  "opencomputo-application",
  "opencomputo-assistente",

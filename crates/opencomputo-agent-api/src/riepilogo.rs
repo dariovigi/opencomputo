@@ -4,19 +4,22 @@ use std::path::Path;
 
 use opencomputo_application::Sessione;
 use opencomputo_core::prezzario::Prezzario;
-use opencomputo_core::validazione::{Gravita, valida_progetto};
+use opencomputo_core::validazione::Gravita;
 use serde_json::{Value, json};
 
 /// Stato sintetico della sessione: totali dei computi, SAL, conteggio dei problemi.
 #[must_use]
 pub fn info(s: &Sessione, percorso: Option<&Path>) -> Value {
     let p = s.progetto();
-    let rapporto = valida_progetto(p);
-    let conta = |g: Gravita| rapporto.problemi.iter().filter(|x| x.gravita == g).count();
+    let problemi = s.problemi();
+    let conta = |g: Gravita| problemi.iter().filter(|x| x.gravita == g).count();
+    // Validazione e totali vengono dalla sessione, che li calcola una volta per ogni
+    // stato del progetto: l'interfaccia chiede `info` dopo ogni modifica.
     let computi: Vec<Value> = p
         .computi
         .iter()
-        .map(|c| match p.calcola_computo(c.id) {
+        .zip(s.totali_computi())
+        .map(|(c, t)| match &t.totali {
             Ok(r) => json!({
                 "nome": c.nome,
                 "tipo": c.tipo,
@@ -30,7 +33,7 @@ pub fn info(s: &Sessione, percorso: Option<&Path>) -> Value {
                 "nome": c.nome,
                 "tipo": c.tipo,
                 "voci": c.voci.len(),
-                "errore": e.to_string(),
+                "errore": e,
             }),
         })
         .collect();
@@ -93,13 +96,13 @@ pub fn info(s: &Sessione, percorso: Option<&Path>) -> Value {
 /// Validazione completa.
 #[must_use]
 pub fn valida(s: &Sessione) -> Value {
-    let rapporto = valida_progetto(s.progetto());
-    let conta = |g: Gravita| rapporto.problemi.iter().filter(|x| x.gravita == g).count();
+    let problemi = s.problemi();
+    let conta = |g: Gravita| problemi.iter().filter(|x| x.gravita == g).count();
     json!({
-        "valido": !rapporto.ha_errori(),
+        "valido": conta(Gravita::Errore) == 0,
         "errori": conta(Gravita::Errore),
         "avvisi": conta(Gravita::Avviso),
-        "problemi": rapporto.problemi,
+        "problemi": problemi,
     })
 }
 

@@ -65,6 +65,45 @@ pub struct OpzioniTradizionale {
     /// Chi firma (frontespizio e fine del documento); assente: il progettista come
     /// «Il Tecnico».
     pub firma: Option<Firma>,
+    /// Cosa produrre: il file PDF, l'anteprima di alcune pagine o entrambi.
+    pub uscita: Uscita,
+}
+
+/// Cosa produce la stampa tradizionale. L'impaginazione è sempre quella dell'intero
+/// documento (il numero delle pagine è sempre esatto); cambia solo quali pagine vengono
+/// disegnate e in che forma.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Uscita {
+    /// Solo il file PDF (anteprima vuota).
+    #[default]
+    Pdf,
+    /// Solo l'anteprima SVG di `quante` pagine dalla `prima` (da 0); il PDF resta vuoto.
+    Anteprima {
+        /// Prima pagina da disegnare, da 0.
+        prima: usize,
+        /// Quante pagine disegnare.
+        quante: usize,
+    },
+    /// Il PDF e l'anteprima di tutte le pagine (per le prove di coerenza).
+    Tutto,
+}
+
+impl OpzioniTradizionale {
+    /// La tela della pagina `indice` (da 0) secondo l'uscita richiesta.
+    fn tela(&self, indice: usize) -> Tela {
+        let (pdf, svg) = match self.uscita {
+            Uscita::Pdf => (true, false),
+            Uscita::Tutto => (true, true),
+            Uscita::Anteprima { prima, quante } => {
+                (false, indice >= prima && indice - prima < quante)
+            }
+        };
+        Tela {
+            pdf,
+            svg_attivo: svg,
+            ..Tela::default()
+        }
+    }
 }
 
 /// Firma del documento: ruolo (es. «Il Direttore dei Lavori») e nome.
@@ -88,6 +127,7 @@ impl Default for OpzioniTradizionale {
             comprimi: true,
             incidenze: Incidenze::default(),
             firma: None,
+            uscita: Uscita::Pdf,
         }
     }
 }
@@ -282,14 +322,35 @@ fn xml(t: &str) -> String {
 
 /// Contenuto di una pagina: le operazioni PDF e, in parallelo, lo stesso disegno in SVG
 /// per l'anteprima (stesse coordinate, in punti dall'alto della pagina).
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Tela {
     ops: String,
     svg: String,
     sostituiti: usize,
+    /// Scrive le operazioni PDF.
+    pdf: bool,
+    /// Scrive l'anteprima SVG.
+    svg_attivo: bool,
+}
+
+impl Default for Tela {
+    fn default() -> Self {
+        Self {
+            ops: String::new(),
+            svg: String::new(),
+            sostituiti: 0,
+            pdf: true,
+            svg_attivo: true,
+        }
+    }
 }
 
 impl Tela {
+    /// Se c'è qualcosa da disegnare in questa pagina.
+    fn attiva(&self) -> bool {
+        self.pdf || self.svg_attivo
+    }
+
     fn testo(&mut self, x: i64, alto: i64, t: &str, c: Carattere, corpo: i64, colore: Colore) {
         self.testo_spaziato(x, alto, t, c, corpo, colore, 0);
     }
@@ -308,20 +369,25 @@ impl Tela {
         if t.is_empty() {
             return;
         }
-        let byte = pdf::codifica(t, &mut self.sostituiti);
         let base = alto + corpo * (1000 - c.discesa()) / 1000;
-        // La spaziatura delle parole fa parte dello stato grafico: va sempre impostata.
-        let tw = format!("{} Tw ", pdf::pt(spazio));
-        let _ = writeln!(
-            self.ops,
-            "BT /{} {} Tf {} rg {tw}{} {} Td {} Tj ET",
-            c.risorsa(),
-            pdf::pt(corpo),
-            colore.rgb(),
-            pdf::pt(x),
-            pdf::pt(ALTEZZA - base),
-            pdf::stringa_pdf(&byte)
-        );
+        if self.pdf {
+            let byte = pdf::codifica(t, &mut self.sostituiti);
+            // La spaziatura delle parole fa parte dello stato grafico: va sempre impostata.
+            let tw = format!("{} Tw ", pdf::pt(spazio));
+            let _ = writeln!(
+                self.ops,
+                "BT /{} {} Tf {} rg {tw}{} {} Td {} Tj ET",
+                c.risorsa(),
+                pdf::pt(corpo),
+                colore.rgb(),
+                pdf::pt(x),
+                pdf::pt(ALTEZZA - base),
+                pdf::stringa_pdf(&byte)
+            );
+        }
+        if !self.svg_attivo {
+            return;
+        }
         // Anteprima: `textLength` fissa la larghezza calcolata con le metriche del PDF,
         // così l'impaginazione è la stessa anche se il carattere a video è diverso.
         let spazi = i64::try_from(t.matches(' ').count()).unwrap_or(0);
@@ -382,26 +448,30 @@ impl Tela {
     }
 
     fn linea(&mut self, (x0, y0): (i64, i64), (x1, y1): (i64, i64), spessore: i64, k: Colore) {
-        let _ = writeln!(
-            self.ops,
-            "{} RG {} w {} {} m {} {} l S",
-            k.rgb(),
-            pdf::pt(spessore),
-            pdf::pt(x0),
-            pdf::pt(ALTEZZA - y0),
-            pdf::pt(x1),
-            pdf::pt(ALTEZZA - y1)
-        );
-        let _ = writeln!(
-            self.svg,
-            "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"{}\"/>",
-            pdf::pt(x0),
-            pdf::pt(y0),
-            pdf::pt(x1),
-            pdf::pt(y1),
-            css(k.rgb()),
-            pdf::pt(spessore)
-        );
+        if self.pdf {
+            let _ = writeln!(
+                self.ops,
+                "{} RG {} w {} {} m {} {} l S",
+                k.rgb(),
+                pdf::pt(spessore),
+                pdf::pt(x0),
+                pdf::pt(ALTEZZA - y0),
+                pdf::pt(x1),
+                pdf::pt(ALTEZZA - y1)
+            );
+        }
+        if self.svg_attivo {
+            let _ = writeln!(
+                self.svg,
+                "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"{}\"/>",
+                pdf::pt(x0),
+                pdf::pt(y0),
+                pdf::pt(x1),
+                pdf::pt(y1),
+                css(k.rgb()),
+                pdf::pt(spessore)
+            );
+        }
     }
 
     fn orizzontale(&mut self, x0: i64, x1: i64, y: i64, spessore: i64, k: Colore) {
@@ -413,46 +483,54 @@ impl Tela {
     }
 
     fn rettangolo(&mut self, (x0, y0): (i64, i64), (x1, y1): (i64, i64), spessore: i64, k: Colore) {
-        let _ = writeln!(
-            self.ops,
-            "{} RG {} w {} {} {} {} re S",
-            k.rgb(),
-            pdf::pt(spessore),
-            pdf::pt(x0),
-            pdf::pt(ALTEZZA - y1),
-            pdf::pt(x1 - x0),
-            pdf::pt(y1 - y0)
-        );
-        let _ = writeln!(
-            self.svg,
-            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"/>",
-            pdf::pt(x0),
-            pdf::pt(y0),
-            pdf::pt(x1 - x0),
-            pdf::pt(y1 - y0),
-            css(k.rgb()),
-            pdf::pt(spessore)
-        );
+        if self.pdf {
+            let _ = writeln!(
+                self.ops,
+                "{} RG {} w {} {} {} {} re S",
+                k.rgb(),
+                pdf::pt(spessore),
+                pdf::pt(x0),
+                pdf::pt(ALTEZZA - y1),
+                pdf::pt(x1 - x0),
+                pdf::pt(y1 - y0)
+            );
+        }
+        if self.svg_attivo {
+            let _ = writeln!(
+                self.svg,
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"/>",
+                pdf::pt(x0),
+                pdf::pt(y0),
+                pdf::pt(x1 - x0),
+                pdf::pt(y1 - y0),
+                css(k.rgb()),
+                pdf::pt(spessore)
+            );
+        }
     }
 
     fn riempi(&mut self, (x0, y0): (i64, i64), (x1, y1): (i64, i64), rgb: &str) {
-        let _ = writeln!(
-            self.ops,
-            "{rgb} rg {} {} {} {} re f 0 0 0 rg",
-            pdf::pt(x0),
-            pdf::pt(ALTEZZA - y1),
-            pdf::pt(x1 - x0),
-            pdf::pt(y1 - y0)
-        );
-        let _ = writeln!(
-            self.svg,
-            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"/>",
-            pdf::pt(x0),
-            pdf::pt(y0),
-            pdf::pt(x1 - x0),
-            pdf::pt(y1 - y0),
-            css(rgb)
-        );
+        if self.pdf {
+            let _ = writeln!(
+                self.ops,
+                "{rgb} rg {} {} {} {} re f 0 0 0 rg",
+                pdf::pt(x0),
+                pdf::pt(ALTEZZA - y1),
+                pdf::pt(x1 - x0),
+                pdf::pt(y1 - y0)
+            );
+        }
+        if self.svg_attivo {
+            let _ = writeln!(
+                self.svg,
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"/>",
+                pdf::pt(x0),
+                pdf::pt(y0),
+                pdf::pt(x1 - x0),
+                pdf::pt(y1 - y0),
+                css(rgb)
+            );
+        }
     }
 }
 
@@ -954,23 +1032,31 @@ impl Intestazione {
     }
 }
 
-/// Assembla le pagine nel file PDF.
-fn file_pdf(pagine: Vec<Tela>, titolo: &str, comprimi: bool) -> RisultatoPdf {
+/// Assembla le pagine nel file PDF e nell'anteprima, secondo l'uscita richiesta
+/// (`o.uscita`): l'anteprima contiene solo le pagine disegnate in SVG.
+fn file_pdf(pagine: Vec<Tela>, titolo: &str, o: &OpzioniTradizionale) -> RisultatoPdf {
     let sostituiti = pagine.iter().map(|t| t.sostituiti).sum();
-    let contenuti: Vec<&str> = pagine.iter().map(|t| t.ops.as_str()).collect();
-    let byte = pdf::assembla(
-        &contenuti,
-        (LARGHEZZA, ALTEZZA),
-        &FONT_PDF,
-        titolo,
-        comprimi,
-    );
-    let numero = contenuti.len();
+    let byte = if o.uscita == Uscita::Pdf || o.uscita == Uscita::Tutto {
+        let contenuti: Vec<&str> = pagine.iter().map(|t| t.ops.as_str()).collect();
+        pdf::assembla(
+            &contenuti,
+            (LARGHEZZA, ALTEZZA),
+            &FONT_PDF,
+            titolo,
+            o.comprimi,
+        )
+    } else {
+        Vec::new()
+    };
     RisultatoPdf {
         byte,
-        pagine: numero,
+        pagine: pagine.len(),
         caratteri_sostituiti: sostituiti,
-        anteprima: pagine.into_iter().map(|t| pagina_svg(&t.svg)).collect(),
+        anteprima: pagine
+            .iter()
+            .filter(|t| t.svg_attivo)
+            .map(|t| pagina_svg(&t.svg))
+            .collect(),
     }
 }
 

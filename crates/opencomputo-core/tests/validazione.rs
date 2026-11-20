@@ -15,6 +15,7 @@ mod common;
 use common::*;
 use opencomputo_core::prelude::*;
 use rust_decimal_macros::dec;
+use std::sync::Arc;
 
 fn codici(p: &Progetto) -> Vec<String> {
     valida_progetto(p)
@@ -35,10 +36,10 @@ fn il_progetto_di_esempio_e_valido() {
 fn problemi_del_prezzario() {
     let mut p = progetto_di_esempio();
     let voci = &mut p.elenco_prezzi.voci;
-    voci[0].codice = voci[1].codice.clone();
-    voci[1].unita_misura = " ".into();
-    voci[2].incidenza_manodopera = Some(Percentuale::new(dec!(120)));
-    voci[3].prezzo = Prezzo::new(dec!(-1));
+    Arc::make_mut(&mut voci[0]).codice = voci[1].codice.clone();
+    Arc::make_mut(&mut voci[1]).unita_misura = " ".into();
+    Arc::make_mut(&mut voci[2]).incidenza_manodopera = Some(Percentuale::new(dec!(120)));
+    Arc::make_mut(&mut voci[3]).prezzo = Prezzo::new(dec!(-1));
     let c = codici(&p);
     for atteso in [
         "prezzario.codice_duplicato",

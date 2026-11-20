@@ -1097,7 +1097,7 @@ impl Attrezzi {
             .voci
             .iter()
             .filter(|v| codici.contains(&v.codice))
-            .map(|v| (v.codice.as_str(), v))
+            .map(|v| (v.codice.as_str(), &**v))
             .collect();
         let voci: Vec<Value> = codici
             .iter()

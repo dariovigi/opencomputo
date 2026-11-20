@@ -282,6 +282,13 @@ impl ModalitaArrotondamento {
     }
 }
 
+/// Massimo valore assoluto di una quantità o di un importo di una voce o di una
+/// registrazione: un milione di miliardi (10^15). Nessun computo reale ci si avvicina;
+/// il limite lascia ai totali, alle percentuali e alle ripartizioni (somme di milioni di
+/// voci, prodotti per cento o per i giorni del cronoprogramma) un margine di oltre mille
+/// volte rispetto alla capacità del tipo decimale (circa 7,9 × 10^28).
+pub const VALORE_MASSIMO: Decimal = Decimal::from_parts(0xA4C6_8000, 0x0003_8D7E, 0, false, 0);
+
 /// Regole di precisione e arrotondamento applicate ai calcoli di un progetto.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RegoleArrotondamento {
@@ -344,6 +351,10 @@ impl RegoleArrotondamento {
     /// così che `5` diventi `5.00` e la rappresentazione sia uniforme.
     #[must_use]
     pub fn arrotonda(&self, valore: Decimal, decimali: u32) -> Decimal {
+        // Regole fuori dai limiti (segnalate dalla validazione) possono arrivare da un
+        // file costruito apposta: oltre la scala massima la libreria dei decimali non
+        // garantisce il risultato.
+        let decimali = decimali.min(Self::DECIMALI_MASSIMI);
         let mut r = valore.round_dp_with_strategy(decimali, self.modalita.strategia());
         r.rescale(decimali);
         // Niente «-0,00»: uno zero arrotondato è sempre positivo.
@@ -422,6 +433,32 @@ mod tests {
             modalita,
             ..RegoleArrotondamento::default()
         }
+    }
+
+    #[test]
+    fn valore_massimo_un_milione_di_miliardi() {
+        assert_eq!(VALORE_MASSIMO, dec!(1000000000000000));
+    }
+
+    /// Regressione (campagna del 2026-11-20): un file con un miliardo di decimali per
+    /// le quantità portava la libreria dei decimali oltre la scala massima e la somma
+    /// successiva terminava il processo.
+    #[test]
+    fn decimali_fuori_misura_limitati() {
+        let r = RegoleArrotondamento {
+            decimali_quantita: 1_000_000_000,
+            ..RegoleArrotondamento::default()
+        };
+        assert!(r.valida().is_err());
+        let q = r.arrotonda_quantita(dec!(0.0000000000000000000000000001));
+        assert_eq!(q.valore().scale(), RegoleArrotondamento::DECIMALI_MASSIMI);
+        let grande = r.arrotonda(dec!(1234567890.5), 1_000_000_000);
+        assert_eq!(grande.scale(), RegoleArrotondamento::DECIMALI_MASSIMI);
+        assert!(
+            grande
+                .checked_add(dec!(0.0000000000000000000000000001))
+                .is_some()
+        );
     }
 
     #[test]

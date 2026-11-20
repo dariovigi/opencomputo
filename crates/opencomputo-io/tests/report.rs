@@ -18,6 +18,7 @@ use opencomputo_io::report::{self, ErroreReport, OpzioniReport};
 use opencomputo_io::{csv, pdf, xlsx};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::sync::Arc;
 
 const FIXTURE: &str =
     include_str!("../../opencomputo-core/tests/fixtures/progetto_esempio_v1.json");
@@ -278,7 +279,8 @@ fn errori_espliciti() {
         report::stato_avanzamento(&p, SalId::da_u128(424_242), &opzioni()),
         Err(ErroreReport::SalInesistente(_))
     ));
-    p.computi[0].voci[1].righi[0].lunghezza = Some(Fattore::Espressione("2*(".into()));
+    Arc::make_mut(&mut p.computi[0].voci[1]).righi[0].lunghezza =
+        Some(Fattore::Espressione("2*(".into()));
     let id = computo_id(&p);
     assert!(matches!(
         report::computo(&p, id, &opzioni()),
@@ -490,8 +492,12 @@ fn righi_vedi_voce_nel_computo() {
 fn progetto_con_sicurezza() -> Progetto {
     use opencomputo_core::numeri::Percentuale;
     let mut p = progetto();
-    p.computi[0].voci[1].prezzo.incidenza_sicurezza = Some(Percentuale::new(dec!(3)));
-    p.computi[0].voci[2].prezzo.incidenza_sicurezza = Some(Percentuale::new(dec!(2.5)));
+    Arc::make_mut(&mut p.computi[0].voci[1])
+        .prezzo
+        .incidenza_sicurezza = Some(Percentuale::new(dec!(3)));
+    Arc::make_mut(&mut p.computi[0].voci[2])
+        .prezzo
+        .incidenza_sicurezza = Some(Percentuale::new(dec!(2.5)));
     p
 }
 

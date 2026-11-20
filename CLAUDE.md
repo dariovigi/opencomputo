@@ -43,6 +43,11 @@
   Aggiungendo una variante a `Comando` aggiornare gli esempi in
   `opencomputo-agent-api/src/schema.rs` (un test lo impone).
 * Report: i valori vengono sempre dal core, mai ricalcolati negli scrittori (ADR 0007).
+* Voci di computo, di elenco e registrazioni sono `Vec<Arc<…>>` condivise tra gli stati
+  di annulla/ripristina (ADR 0026): modificarle con `voce_mut`/`Arc::make_mut` solo se
+  cambiano davvero. I percorsi di alberi (WBS, capitoli) devono reggere identificativi
+  ripetuti e cicli dei file danneggiati. Campagne lunghe: `OPENCOMPUTO_SEMI=2000` per
+  `sequenze_casuali`, `OPENCOMPUTO_PROVE=20000` per `file_danneggiati`.
 * Stampe di riferimento di programmi commerciali: solo per misurare l'impaginazione,
   mai nel repository; non riprodurre nomi, marchi o crediti (ADR 0015).
 * DCF: mai decifrare flussi protetti né aggirare password (ADR 0006); in scrittura mai

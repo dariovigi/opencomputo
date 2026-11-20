@@ -4,6 +4,7 @@
 //! correnti, fabbisogno espanso dalle sotto-analisi): qui sono solo impaginati.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use opencomputo_core::analisi::TipoRisorsa;
 use opencomputo_core::id::ComputoId;
@@ -49,6 +50,7 @@ fn voci_analizzate<'a>(
         .elenco_prezzi
         .voci
         .iter()
+        .map(Arc::as_ref)
         .filter(|v| v.analisi.is_some() && voce.is_none_or(|c| v.codice == c))
         .collect();
     if voci.is_empty() {
@@ -430,6 +432,7 @@ pub fn nuovi_prezzi(
         .elenco_prezzi
         .voci
         .iter()
+        .map(Arc::as_ref)
         .filter(|v| {
             v.nuovo_prezzo
                 .as_ref()

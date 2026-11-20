@@ -17,6 +17,7 @@ use opencomputo_core::validazione::valida_progetto;
 use opencomputo_io::report::OpzioniReport;
 use opencomputo_storage::OpzioniSalvataggio;
 use rust_decimal_macros::dec;
+use std::sync::Arc;
 
 fn comandi(json: &str) -> Vec<Comando> {
     serde_json::from_str(json).unwrap_or_else(|e| panic!("{e}\n{json}"))
@@ -1572,11 +1573,12 @@ fn aggiornamento_da_un_nuovo_listino_con_confronto_e_prova() {
     let mut listino = s.progetto().elenco_prezzi.clone();
     listino.nome = "Regionale".into();
     listino.edizione = Some("2027".into());
-    for v in &mut listino.voci {
+    for v in listino.voci.iter_mut().map(Arc::make_mut) {
         v.codice = format!("2027.{}", v.codice);
     }
-    listino.voci[0].prezzo = opencomputo_core::numeri::Prezzo::new(dec!(9.00));
-    listino.voci[1].prezzo = opencomputo_core::numeri::Prezzo::new(dec!(150.00));
+    Arc::make_mut(&mut listino.voci[0]).prezzo = opencomputo_core::numeri::Prezzo::new(dec!(9.00));
+    Arc::make_mut(&mut listino.voci[1]).prezzo =
+        opencomputo_core::numeri::Prezzo::new(dec!(150.00));
     s.carica_prezzario("regionale 2027", listino.clone());
     let codice_scavo = s.progetto().elenco_prezzi.voci[0].codice.clone();
 

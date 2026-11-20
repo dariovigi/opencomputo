@@ -33,8 +33,11 @@ use thiserror::Error;
 pub const ESTENSIONE: &str = "ocp";
 /// Byte iniziali di un flusso gzip.
 const MAGIA_GZIP: [u8; 2] = [0x1f, 0x8b];
-/// Dimensione massima accettata del documento decompresso (protezione da file «bomba»).
-pub const DIMENSIONE_MASSIMA: u64 = 2 << 30;
+/// Dimensione massima del documento, compresso o no (protezione da file «bomba»). Un
+/// progetto di 20.000 voci con 100.000 righi occupa circa 115 MB: il limite lascia
+/// margine ai progetti reali e impedisce che un file di pochi MB, decompresso, esaurisca
+/// la memoria del computer.
+pub const DIMENSIONE_MASSIMA: u64 = 512 << 20;
 
 /// Errore di lettura o scrittura di un file di progetto.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -134,22 +137,30 @@ pub fn codifica(progetto: &Progetto, compressione: Compressione) -> Result<Vec<u
 /// # Errors
 /// File compresso danneggiato, testo non UTF-8, progetto non valido o di versione futura.
 pub fn decodifica(byte: &[u8]) -> Result<Progetto, ErroreStorage> {
+    decodifica_entro(byte, DIMENSIONE_MASSIMA)
+}
+
+fn decodifica_entro(byte: &[u8], massimo: u64) -> Result<Progetto, ErroreStorage> {
+    let oltre = || ErroreStorage::Contenuto(format!("documento oltre {massimo} byte"));
     let testo = if byte.starts_with(&MAGIA_GZIP) {
         let mut s = String::new();
         GzDecoder::new(byte)
-            .take(DIMENSIONE_MASSIMA + 1)
+            .take(massimo.saturating_add(1))
             .read_to_string(&mut s)
             .map_err(|e| ErroreStorage::Contenuto(format!("gzip: {e}")))?;
-        if s.len() as u64 > DIMENSIONE_MASSIMA {
-            return Err(ErroreStorage::Contenuto(format!(
-                "documento oltre {DIMENSIONE_MASSIMA} byte"
-            )));
+        if s.len() as u64 > massimo {
+            return Err(oltre());
         }
         s
     } else {
+        if byte.len() as u64 > massimo {
+            return Err(oltre());
+        }
         let t = byte.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(byte);
-        String::from_utf8(t.to_vec())
-            .map_err(|e| ErroreStorage::Contenuto(format!("il file non è testo UTF-8: {e}")))?
+        // Senza copiare il contenuto: il testo resta nel buffer letto dal file.
+        let testo = std::str::from_utf8(t)
+            .map_err(|e| ErroreStorage::Contenuto(format!("il file non è testo UTF-8: {e}")))?;
+        return Ok(schema::importa_json(testo)?);
     };
     Ok(schema::importa_json(&testo)?)
 }
@@ -159,6 +170,16 @@ pub fn decodifica(byte: &[u8]) -> Result<Progetto, ErroreStorage> {
 /// # Errors
 /// Errori del filesystem o di [`decodifica`].
 pub fn apri(percorso: &Path) -> Result<Progetto, ErroreStorage> {
+    // Prima della lettura: un file enorme non viene caricato in memoria.
+    let dimensione = fs::metadata(percorso)
+        .map_err(|e| io("lettura di", percorso, &e))?
+        .len();
+    if dimensione > DIMENSIONE_MASSIMA {
+        return Err(ErroreStorage::Contenuto(format!(
+            "{}: file di {dimensione} byte, oltre il massimo di {DIMENSIONE_MASSIMA}",
+            percorso.display()
+        )));
+    }
     let byte = fs::read(percorso).map_err(|e| io("lettura di", percorso, &e))?;
     decodifica(&byte)
 }
@@ -263,6 +284,52 @@ mod tests {
             con_suffisso(p, ".tmp1"),
             PathBuf::from("/tmp/lavori.ocp.tmp1")
         );
+    }
+
+    /// File «bomba»: pochi KB che decompressi supererebbero il limite. La lettura si
+    /// ferma al limite, senza decomprimere il resto.
+    #[test]
+    fn file_compresso_oltre_il_limite() {
+        let mut e = GzEncoder::new(Vec::new(), Compression::best());
+        for _ in 0..64 {
+            e.write_all(&[b' '; 1 << 16]).unwrap();
+        }
+        let bomba = e.finish().unwrap();
+        assert!(bomba.len() < 16 << 10, "{}", bomba.len());
+        let errore = decodifica_entro(&bomba, 1 << 20).unwrap_err();
+        assert!(
+            errore.to_string().contains("oltre 1048576 byte"),
+            "{errore}"
+        );
+        // Sotto il limite il contenuto viene letto (e qui rifiutato perché non è JSON).
+        let errore = decodifica_entro(&bomba, 8 << 20).unwrap_err();
+        assert!(!errore.to_string().contains("oltre"), "{errore}");
+        // Lo stesso per un documento non compresso.
+        let testo = vec![b' '; 2 << 20];
+        assert!(
+            decodifica_entro(&testo, 1 << 20)
+                .unwrap_err()
+                .to_string()
+                .contains("oltre")
+        );
+    }
+
+    /// Un file più grande del limite non viene neppure letto.
+    #[test]
+    fn file_troppo_grande_non_letto() {
+        let d = std::env::temp_dir().join(format!("opencomputo-grande-{}", std::process::id()));
+        fs::create_dir_all(&d).unwrap();
+        let f = d.join("enorme.ocp");
+        // File sparso: occupa la dimensione dichiarata senza usare disco.
+        fs::File::create(&f)
+            .unwrap()
+            .set_len(DIMENSIONE_MASSIMA + 1)
+            .unwrap();
+        let inizio = std::time::Instant::now();
+        let errore = apri(&f).unwrap_err();
+        assert!(errore.to_string().contains("oltre il massimo"), "{errore}");
+        assert!(inizio.elapsed() < std::time::Duration::from_secs(1));
+        let _ = fs::remove_dir_all(&d);
     }
 
     #[test]

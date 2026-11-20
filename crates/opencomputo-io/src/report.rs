@@ -501,6 +501,9 @@ pub(crate) fn riepiloghi(
             cumulati: &'a BTreeMap<WbsNodoId, Importo>,
             quote: &'a [BTreeMap<WbsNodoId, Importo>],
             righe: Vec<RigaRiepilogo>,
+            /// Nodi già visitati: con identificativi ripetuti (file danneggiato) la
+            /// struttura può contenere un ciclo.
+            visti: std::collections::HashSet<WbsNodoId>,
         }
         impl Visita<'_> {
             fn nodi(
@@ -512,6 +515,9 @@ pub(crate) fn riepiloghi(
                     let Some(importo) = self.cumulati.get(&nodo.id) else {
                         continue;
                     };
+                    if !self.visti.insert(nodo.id) {
+                        continue;
+                    }
                     let codice = self
                         .p
                         .wbs
@@ -539,6 +545,7 @@ pub(crate) fn riepiloghi(
             cumulati: &cumulati,
             quote: &quote_cumulate,
             righe: Vec::new(),
+            visti: std::collections::HashSet::new(),
         };
         v.nodi(None, 0)?;
         let mut righe = v.righe;

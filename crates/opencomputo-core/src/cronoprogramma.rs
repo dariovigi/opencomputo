@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::classificazione::StrutturaWbs;
+use crate::errore::ErroreCalcolo;
 use crate::id::{AttivitaId, ComputoId, WbsNodoId};
 use crate::numeri::Importo;
 use crate::progetto::Progetto;
@@ -716,6 +717,11 @@ fn struttura(
             return;
         }
         for n in p.wbs.figli(padre_wbs) {
+            // Identificativi ripetuti (file danneggiato) possono chiudere un ciclo:
+            // ogni nodo entra una volta sola.
+            if s.per_rif.contains_key(&RifAttivita::Wbs(n.id)) {
+                continue;
+            }
             let i = s.elementi.len();
             s.elementi.push(Elemento {
                 attivita: RifAttivita::Wbs(n.id),
@@ -1231,23 +1237,26 @@ pub fn calcola(p: &Progetto, livello: Option<Option<u32>>) -> Result<Piano, Erro
 
     // Produzione mensile: importi delle foglie WBS e quote dirette dei riepiloghi,
     // ripartiti sui giorni lavorativi con somme esatte.
+    // Importi vicini al massimo rappresentabile: errore, non un arresto.
+    let trabocco = || ErroreCronoprogramma::Importi(ErroreCalcolo::Overflow.to_string());
+    let somma = |a: Decimal, b: Decimal| a.checked_add(b).ok_or_else(trabocco);
     let mut per_mese: BTreeMap<(i32, u32), Decimal> = BTreeMap::new();
     let mut pianificato = Decimal::ZERO;
     for (i, e) in s.elementi.iter().enumerate() {
         let Some(cumulato) = e.importo_cumulato else {
             continue;
         };
-        let figli_wbs: Decimal = e
+        let figli_wbs = e
             .figli
             .iter()
             .filter_map(|f| s.elementi.get(*f))
             .filter_map(|f| f.importo_cumulato)
-            .sum();
-        let proprio = cumulato - figli_wbs;
+            .try_fold(Decimal::ZERO, somma)?;
+        let proprio = cumulato.checked_sub(figli_wbs).ok_or_else(trabocco)?;
         if proprio.is_zero() {
             continue;
         }
-        pianificato += proprio;
+        pianificato = somma(pianificato, proprio)?;
         let es = inizio_presto.get(i).copied().unwrap_or(0);
         let ef = fine_presto.get(i).copied().unwrap_or(0).max(es + 1);
         let mut giorni: BTreeMap<(i32, u32), i64> = BTreeMap::new();
@@ -1260,14 +1269,17 @@ pub fn calcola(p: &Progetto, livello: Option<Option<u32>>) -> Result<Piano, Erro
         let k = giorni.len();
         for (j, (mese, cnt)) in giorni.into_iter().enumerate() {
             let quota = if j + 1 == k {
-                proprio - assegnato
+                proprio.checked_sub(assegnato).ok_or_else(trabocco)?
             } else {
-                p.regole
-                    .arrotonda_importo(proprio * Decimal::from(cnt) / totale)
-                    .valore()
+                let q = proprio
+                    .checked_mul(Decimal::from(cnt))
+                    .and_then(|x| x.checked_div(totale))
+                    .ok_or_else(trabocco)?;
+                p.regole.arrotonda_importo(q).valore()
             };
-            assegnato += quota;
-            *per_mese.entry(mese).or_default() += quota;
+            assegnato = somma(assegnato, quota)?;
+            let mensile = per_mese.entry(mese).or_default();
+            *mensile = somma(*mensile, quota)?;
         }
     }
     let inizio_piano = scala.data(0)?;
@@ -1295,11 +1307,15 @@ pub fn calcola(p: &Progetto, livello: Option<Option<u32>>) -> Result<Piano, Erro
         (a, m) = primo;
         while (a, m) <= ultimo {
             let importo = per_mese.get(&(a, m)).copied().unwrap_or_default();
-            cumulato += importo;
+            cumulato = somma(cumulato, importo)?;
             let percentuale = if pianificato.is_zero() {
                 Decimal::ZERO
             } else {
-                (cumulato * Decimal::ONE_HUNDRED / pianificato)
+                // Prima la divisione: il cumulato può essere vicino al massimo.
+                cumulato
+                    .checked_div(pianificato)
+                    .and_then(|x| x.checked_mul(Decimal::ONE_HUNDRED))
+                    .ok_or_else(trabocco)?
                     .round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero)
             };
             mesi.push(ProduzioneMese {

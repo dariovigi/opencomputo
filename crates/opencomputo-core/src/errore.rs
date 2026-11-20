@@ -21,6 +21,9 @@ pub enum ErroreCalcolo {
     /// Il risultato eccede la capacità del tipo decimale (circa 28 cifre significative).
     #[error("superamento della capacità numerica (overflow)")]
     Overflow,
+    /// Quantità o importo oltre [`crate::numeri::VALORE_MASSIMO`] in valore assoluto.
+    #[error("valore oltre il limite gestito (un milione di miliardi)")]
+    FuoriLimite,
     /// Divisione per zero.
     #[error("divisione per zero")]
     DivisionePerZero,

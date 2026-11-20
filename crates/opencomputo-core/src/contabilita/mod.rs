@@ -28,6 +28,7 @@ pub mod sal;
 pub mod sommario;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
@@ -147,7 +148,7 @@ impl Contabilita {
             });
         }
         self.verifica_numero(registrazione.numero, None)?;
-        self.libretto.registrazioni.push(registrazione);
+        self.libretto.registrazioni.push(Arc::new(registrazione));
         Ok(())
     }
 
@@ -186,7 +187,7 @@ impl Contabilita {
             .libretto
             .registrazioni
             .get(posizione)
-            .cloned()
+            .map(|r| RegistrazioneLibretto::clone(r))
             .ok_or_else(|| registrazione_non_trovata(id))?;
         modifica(&mut copia);
         if copia.id != id {
@@ -202,7 +203,7 @@ impl Contabilita {
             )));
         }
         if let Some(r) = self.libretto.registrazioni.get_mut(posizione) {
-            *r = copia;
+            *r = Arc::new(copia);
         }
         Ok(())
     }
@@ -232,7 +233,9 @@ impl Contabilita {
         for s in &mut self.sal {
             s.registrazioni.retain(|r| *r != id);
         }
-        Ok(self.libretto.registrazioni.remove(posizione))
+        Ok(Arc::unwrap_or_clone(
+            self.libretto.registrazioni.remove(posizione),
+        ))
     }
 
     /// Registrazioni non ancora attribuite a un SAL con data non successiva a
@@ -248,6 +251,7 @@ impl Contabilita {
             .libretto
             .registrazioni
             .iter()
+            .map(Arc::as_ref)
             .filter(|r| r.data <= fino_al && !assegnate.contains(&r.id))
             .collect();
         elenco.sort_by_key(|r| r.numero);

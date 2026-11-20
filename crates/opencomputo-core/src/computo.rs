@@ -9,6 +9,7 @@
 //! somma delle voci stampate.
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 use rust_decimal::Decimal;
 
@@ -337,7 +338,7 @@ pub struct Computo {
     pub tipo: TipoComputo,
     /// Voci, nell'ordine del documento.
     #[serde(default)]
-    pub voci: Vec<VoceComputo>,
+    pub voci: Vec<Arc<VoceComputo>>,
     /// Provenienza.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provenienza: Option<Provenienza>,
@@ -359,12 +360,15 @@ impl Computo {
     /// Voce per identificativo.
     #[must_use]
     pub fn voce(&self, id: VoceComputoId) -> Option<&VoceComputo> {
-        self.voci.iter().find(|v| v.id == id)
+        self.voci.iter().find(|v| v.id == id).map(Arc::as_ref)
     }
 
     /// Voce per identificativo, modificabile.
+    ///
+    /// Le voci sono condivise con le copie del progetto (cronologia di «Annulla»): se
+    /// questa lo è, viene prima duplicata, e le altre copie restano invariate.
     pub fn voce_mut(&mut self, id: VoceComputoId) -> Option<&mut VoceComputo> {
-        self.voci.iter_mut().find(|v| v.id == id)
+        self.voci.iter_mut().find(|v| v.id == id).map(Arc::make_mut)
     }
 
     fn posizione(&self, id: VoceComputoId) -> Result<usize, ErroreDominio> {
@@ -393,8 +397,8 @@ impl Computo {
             });
         }
         match posizione {
-            None => self.voci.push(voce),
-            Some(p) if p <= self.voci.len() => self.voci.insert(p, voce),
+            None => self.voci.push(Arc::new(voce)),
+            Some(p) if p <= self.voci.len() => self.voci.insert(p, Arc::new(voce)),
             Some(p) => {
                 return Err(ErroreDominio::OperazioneNonConsentita(format!(
                     "posizione {p} oltre la fine del computo ({} voci)",
@@ -437,7 +441,7 @@ impl Computo {
     /// Voce inesistente.
     pub fn rimuovi_voce(&mut self, id: VoceComputoId) -> Result<VoceComputo, ErroreDominio> {
         let p = self.posizione(id)?;
-        Ok(self.voci.remove(p))
+        Ok(Arc::unwrap_or_clone(self.voci.remove(p)))
     }
 
     /// Sposta una voce nella nuova posizione (base 0).

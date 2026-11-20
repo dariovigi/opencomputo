@@ -169,6 +169,49 @@ struct InvolucroLettura {
     progetto: Value,
 }
 
+/// Documento della versione corrente, letto direttamente nel modello: `Some` solo se
+/// `formato` e `versione_schema` (corrente) precedono `progetto`, come nei file scritti
+/// da [`esporta_json`]. In ogni altro caso la lettura si ferma appena possibile.
+struct Corrente(Option<Progetto>);
+
+impl<'de> Deserialize<'de> for Corrente {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct Visitatore;
+        impl<'de> serde::de::Visitor<'de> for Visitatore {
+            type Value = Corrente;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("un documento OpenComputo")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut m: A,
+            ) -> Result<Corrente, A::Error> {
+                use serde::de::{Error, IgnoredAny};
+                let (mut formato, mut versione, mut progetto) = (false, false, None);
+                while let Some(chiave) = m.next_key::<std::borrow::Cow<'de, str>>()? {
+                    match chiave.as_ref() {
+                        "formato" if !formato => formato = m.next_value::<String>()? == FORMATO,
+                        "versione_schema" if !versione => {
+                            versione = m.next_value::<u32>()? == VERSIONE_SCHEMA_CORRENTE;
+                        }
+                        "progetto" if formato && versione && progetto.is_none() => {
+                            progetto = Some(m.next_value::<Progetto>()?);
+                        }
+                        "progetto" | "formato" | "versione_schema" => {
+                            return Err(A::Error::custom("non è un documento corrente"));
+                        }
+                        _ => {
+                            m.next_value::<IgnoredAny>()?;
+                        }
+                    }
+                }
+                Ok(Corrente(progetto.filter(|_| formato && versione)))
+            }
+        }
+        d.deserialize_map(Visitatore)
+    }
+}
+
 /// Serializza il progetto nel formato corrente (JSON indentato).
 ///
 /// # Errors
@@ -200,6 +243,35 @@ pub fn importa_json_con(
     migrazioni: &[Migrazione],
     versione_corrente: u32,
 ) -> Result<Progetto, ErroreSchema> {
+    // File della versione corrente (il caso comune): lettura diretta nel modello, senza
+    // l'albero JSON intermedio che serve solo alle migrazioni. Ogni altro caso, errori
+    // compresi, segue la strada generale, con gli stessi messaggi di sempre.
+    if versione_corrente == VERSIONE_SCHEMA_CORRENTE
+        && let Ok(Corrente(Some(progetto))) = serde_json::from_str::<Corrente>(testo)
+    {
+        return Ok(progetto);
+    }
+    importa_generale(testo, migrazioni, versione_corrente)
+}
+
+/// Testo massimo per la lettura generale, che costruisce l'albero JSON (5–6 volte la
+/// memoria del testo). Serve ai documenti di versioni precedenti, piccoli nella pratica;
+/// quelli della versione corrente passano dalla lettura diretta, senza questo limite.
+pub const TESTO_MASSIMO_MIGRAZIONI: usize = 256 << 20;
+
+/// Lettura generale: albero JSON, controllo dell'involucro, migrazioni.
+fn importa_generale(
+    testo: &str,
+    migrazioni: &[Migrazione],
+    versione_corrente: u32,
+) -> Result<Progetto, ErroreSchema> {
+    if testo.len() > TESTO_MASSIMO_MIGRAZIONI {
+        return Err(ErroreSchema::Json(format!(
+            "documento di {} byte: oltre {TESTO_MASSIMO_MIGRAZIONI} byte si leggono solo \
+             i documenti della versione {VERSIONE_SCHEMA_CORRENTE}",
+            testo.len()
+        )));
+    }
     let grezzo: Value =
         serde_json::from_str(testo).map_err(|e| ErroreSchema::Json(e.to_string()))?;
     match grezzo.get("versione_schema") {
@@ -249,4 +321,66 @@ pub fn migra(
         versione += 1;
     }
     Ok(progetto)
+}
+
+#[cfg(test)]
+mod prove {
+    use super::*;
+
+    const V7: &str = include_str!("../tests/fixtures/progetto_esempio_v7.json");
+    const V3: &str = include_str!("../tests/fixtures/progetto_esempio_v3.json");
+
+    fn generale(t: &str) -> Result<Progetto, ErroreSchema> {
+        importa_generale(t, MIGRAZIONI, VERSIONE_SCHEMA_CORRENTE)
+    }
+
+    /// La lettura diretta dà lo stesso risultato (o lo stesso errore) della generale.
+    #[test]
+    fn lettura_diretta_uguale_alla_generale() {
+        let riscritto = esporta_json(&importa_json(V7).unwrap()).unwrap();
+        let mut casi: Vec<String> = vec![V7.into(), V3.into(), riscritto.clone()];
+        // Chiavi dell'involucro in altro ordine, ripetute, mancanti, sbagliate.
+        let corpo = riscritto
+            .split_once("\"progetto\":")
+            .map(|(_, c)| c.trim_end().trim_end_matches('}').to_owned())
+            .unwrap();
+        for involucro in [
+            format!(
+                "{{\"progetto\": {corpo}, \"formato\": \"{FORMATO}\", \"versione_schema\": 7}}"
+            ),
+            format!(
+                "{{\"versione_schema\": 7, \"formato\": \"{FORMATO}\", \"altro\": [1, {{}}], \"progetto\": {corpo}}}"
+            ),
+            format!(
+                "{{\"formato\": \"{FORMATO}\", \"versione_schema\": 7, \"versione_schema\": 6, \"progetto\": {corpo}}}"
+            ),
+            format!(
+                "{{\"formato\": \"{FORMATO}\", \"versione_schema\": 7, \"progetto\": {corpo}, \"progetto\": {{}}}}"
+            ),
+            format!("{{\"formato\": \"altro\", \"versione_schema\": 7, \"progetto\": {corpo}}}"),
+            format!(
+                "{{\"formato\": \"{FORMATO}\", \"versione_schema\": 8, \"progetto\": {corpo}}}"
+            ),
+            format!("{{\"formato\": \"{FORMATO}\", \"progetto\": {corpo}}}"),
+            format!(
+                "{{\"formato\": \"{FORMATO}\", \"versione_schema\": \"7\", \"progetto\": {corpo}}}"
+            ),
+            format!(
+                "{{\"formato\": \"{FORMATO}\", \"versione_schema\": 7, \"progetto\": {{\"id\": 1}}}}"
+            ),
+            format!("{{\"formato\": \"{FORMATO}\", \"versione_schema\": 7, \"progetto\": {corpo}"),
+            "[]".into(),
+            String::new(),
+        ] {
+            casi.push(involucro);
+        }
+        for (i, t) in casi.iter().enumerate() {
+            let (a, b) = (importa_json(t), generale(t));
+            match (&a, &b) {
+                (Ok(x), Ok(y)) => assert_eq!(x, y, "caso {i}"),
+                (Err(x), Err(y)) => assert_eq!(x.to_string(), y.to_string(), "caso {i}"),
+                _ => panic!("caso {i}: {:?} / {:?}", a.as_ref().err(), b.as_ref().err()),
+            }
+        }
+    }
 }

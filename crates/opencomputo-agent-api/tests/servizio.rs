@@ -484,3 +484,33 @@ fn richieste_che_cambiano_lo_stato() {
     );
     assert!(cambiato);
 }
+
+/// Un file da importare oltre il limite non viene letto: errore chiaro e immediato.
+#[test]
+fn import_di_un_file_troppo_grande() {
+    let d = cartella("import-grande");
+    let mut s = Servizio::new();
+    for nome in ["enorme.xpwe", "enorme.dcf", "enorme.csv"] {
+        let f = d.join(nome);
+        // File sparso: dimensione dichiarata senza occupare disco.
+        std::fs::File::create(&f)
+            .unwrap()
+            .set_len(opencomputo_agent_api::servizio::IMPORT_MASSIMO + 1)
+            .unwrap();
+        let inizio = std::time::Instant::now();
+        let richiesta = if nome.ends_with(".csv") {
+            json!({"richiesta": "carica_prezzario", "nome": "x", "percorso": f})
+        } else {
+            json!({"richiesta": "importa", "origine": f})
+        };
+        let e = rifiuta(&mut s, richiesta);
+        assert!(
+            e["descrizione"]
+                .as_str()
+                .unwrap()
+                .contains("oltre il massimo"),
+            "{e}"
+        );
+        assert!(inizio.elapsed() < std::time::Duration::from_secs(1));
+    }
+}

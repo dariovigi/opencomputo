@@ -17,6 +17,7 @@ use opencomputo_core::prelude::*;
 use opencomputo_format_xpwe::xml::{Nodo, analizza};
 use opencomputo_format_xpwe::{OpzioniImport, esporta, importa};
 use rust_decimal_macros::dec;
+use std::sync::Arc;
 
 const REALE: &[u8] = include_bytes!("fixtures/primus_dcf_5_01_vuoto.xpwe");
 
@@ -149,7 +150,7 @@ fn voci_aggiunte_a_un_documento_reale_vuoto() {
             .con_lunghezza(dec!(10))
             .con_larghezza(dec!(2)),
     );
-    r.progetto.computi[0].voci.push(vc);
+    r.progetto.computi[0].voci.push(Arc::new(vc));
 
     let xml = esporta(&r.progetto, r.computo).unwrap().xml;
     let radice = analizza(xml.as_bytes()).unwrap().radice;

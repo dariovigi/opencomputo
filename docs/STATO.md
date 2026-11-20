@@ -1,7 +1,8 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-11-13. Ultimo lavoro, sul ramo `assistente`: finestra
-ridimensionabile e verifica su un XPWE reale con voci (sezione qui sotto), dopo **prestazioni e
+Ultimo aggiornamento: 2026-11-20. Ultimo lavoro: **prestazioni, difetti e vulnerabilità**
+(sezione qui sotto; ADR 0026), dopo la finestra
+ridimensionabile e la verifica su un XPWE reale con voci, dopo **prestazioni e
 robustezza dell'assistente AI** (sezione qui sotto; ADR 0025, decisioni 34–40), dopo le **voci
 alternative** dell'assistente AI (opzioni in ordine di pertinenza da spuntare, misure
 modificabili; ADR 0025, decisioni 29–33), dopo la fase 4 (vista «Assistente AI»
@@ -23,6 +24,84 @@ un'altra voce del computo, statici nel libretto; schema 6), dopo le voci affianc
 computo (vista divisa con «>» e «<»), il trascinamento di voci tra finestre, l'export sperimentale
 dell'elenco prezzi in DCF, la stampa nel modello tradizionale e il completamento delle
 analisi prezzi.
+
+## Prestazioni, difetti e vulnerabilità (2026-11-20)
+
+Richiesta del titolare: ottimizzare l'intero programma, trovare falle, bug e
+vulnerabilità e risolverli. Decisioni in ADR 0026.
+
+### Misure (computo sintetico: 5.000 voci di elenco, 20.000 voci, 100.000 righi)
+
+`cargo run --release -p opencomputo-agent-api --example misura_progetto -- computo.xpwe`
+(attraverso il servizio JSON, come l'interfaccia; Linux, Rust 1.97.0). Il computo si
+genera con dati sintetici; non è nel repository.
+
+| Operazione | Prima | Dopo |
+|---|---|---|
+| import XPWE (26 MB) | 1977 ms, 718 MB | 1050 ms, 359 MB |
+| `info` | 245 ms | 0 ms |
+| `valida` | 125 ms | 0 ms |
+| salva `.ocp` compresso | ~1800 ms | 925 ms |
+| apri `.ocp` compresso | 2216 ms | 568 ms |
+| modifica di un rigo | 460 ms | 190 ms |
+| memoria dopo 20 modifiche | 2,7 GB (oltre 4 GB a 50) | 515 MB, stabile |
+| anteprima tradizionale (6 pagine di 3.127) | 2046 ms, +240 MB | 408 ms, +0 MB |
+| PDF tradizionale | 2098 ms | 1220 ms |
+
+Ancora lenti (candidati per il futuro, ADR 0026): la vista del computo intero (0,7 s e
+32 MB di JSON, che l'interfaccia ricarica dopo ogni modifica), i report completi
+(1,2–1,8 s), la validazione completa dopo ogni modifica.
+
+### Difetti e vulnerabilità trovati e corretti
+
+* **File compressi senza limite** (vulnerabilità): un `.ocp` gzip di pochi KB poteva
+  espandersi fino a esaurire la memoria; nessun limite neanche ai file da importare.
+  Ora `.ocp` fino a 512 MB, controllati prima della lettura e durante la
+  decompressione; import fino a 256 MB; documenti da migrare fino a 256 MB.
+* **Ciclo nella WBS da identificativi ripetuti** (file costruito apposta o danneggiato):
+  la vista dei dati generali lo percorreva all'infinito fino a esaurire la memoria;
+  riepilogo WBS dei report e cronoprogramma lo percorrevano ricorsivamente fino
+  all'esaurimento della pila. Trovato dalla campagna sui file danneggiati.
+* **Un miliardo di decimali** in `imposta_regole` accettato con la politica permissiva:
+  il report Excel chiedeva 1 GB per un formato numerico; da un file, la libreria dei
+  decimali andava oltre la scala massima e la somma delle quantità arrestava il
+  programma all'apertura. Trovato dalle sequenze casuali e dai file danneggiati.
+* **Quantità di 10^26 accettate** (una formula con un numero enorme): la ripartizione
+  mensile del cronoprogramma superava la capacità del tipo decimale e arrestava il
+  programma. Ora quantità e importi di voci e registrazioni oltre 10^15 sono errori di
+  calcolo, e la ripartizione usa operazioni controllate.
+* Memoria dell'annullamento (vedi le misure): con progetti grandi 50 passi conservati
+  superavano i 4 GB.
+
+### Verifiche senza difetti
+
+* Interfaccia: nessun `innerHTML`/`eval`, CSP restrittiva, permessi Tauri minimi;
+  export CSV protetto dalle formule; XML e PDF con caratteri di controllo e speciali
+  protetti; parser XPWE (profondità 64, 5 milioni di elementi) e DCF con limiti.
+* Campagne ripetute: DCF 20.000 file mutati, XPWE 20.000, formule 50.000: nessun panic.
+
+### Test aggiunti (eseguiti e passati il 2026-11-20, Rust 1.97.0, Linux)
+
+* `opencomputo-agent-api/tests/sequenze_casuali.rs` (2): sequenze casuali di comandi
+  (esempi documentati dei 57 comandi e comandi di un progetto completo, con valori
+  limite) con annulla e ripristina; dopo ogni passo: niente panic, atomicità dei
+  rifiuti, prova uguale all'esecuzione, problemi e totali in memoria uguali a quelli
+  ricalcolati, annulla/ripristina esatti; ogni 10 passi salvataggio e rilettura
+  identici e tutte le viste, ogni 50 i report PDF ed Excel. In `cargo test` 8 semi da
+  250 passi; con `OPENCOMPUTO_SEMI=2000` (4.000 semi, un milione di passi) passato.
+* `opencomputo-agent-api/tests/file_danneggiati.rs` (3): fixture v1–v7 con valori,
+  riferimenti, elementi e byte alterati, in chiaro e compressi, aperti e usati
+  attraverso il servizio (viste, anteprime, report, export, modifica, salvataggio e
+  riapertura identica); più le due regressioni. In `cargo test` 150 file; con
+  `OPENCOMPUTO_PROVE=20000` passato (4.734 file aperti e usati, 15.266 rifiutati).
+* `opencomputo-io/tests/tradizionale.rs::uscite_coerenti`; limiti di `storage` e del
+  servizio; `prove_indice` dell'elenco prezzi; lettura diretta uguale alla generale;
+  stato in memoria della sessione; `id_massimo`; valore massimo delle partite;
+  decimali fuori misura.
+
+Totali: `cargo test --workspace` 448 test, `npm test` 54; `cargo clippy` con e senza
+`--all-features`, `cargo fmt --check` e `cargo deny check` puliti. Non riprovati:
+macOS, Windows, Rust 1.88 e wasm32 (li verifica la CI).
 
 ## Finestra ridimensionabile e verifica su un XPWE reale con voci (2026-11-13)
 

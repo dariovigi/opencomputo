@@ -2,8 +2,10 @@
 
 use std::collections::BTreeSet;
 use std::path::Path;
+use std::sync::OnceLock;
 
-use opencomputo_core::id::{GeneratoreId, GeneratoreSequenziale};
+use opencomputo_core::computo::RiepilogoComputo;
+use opencomputo_core::id::{ComputoId, GeneratoreId, GeneratoreSequenziale};
 use opencomputo_core::numeri::Importo;
 use opencomputo_core::prezzario::Prezzario;
 use opencomputo_core::progetto::Progetto;
@@ -67,6 +69,84 @@ impl Default for Politica {
 struct Passo {
     descrizione: String,
     progetto: Progetto,
+    stato: OnceLock<Stato>,
+}
+
+/// Totali di un computo (senza il dettaglio delle voci).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TotaliComputo {
+    /// Computo.
+    pub computo: ComputoId,
+    /// Nome del computo.
+    pub nome: String,
+    /// Totali, o il messaggio dell'errore che impedisce il calcolo.
+    pub totali: Result<ImportiComputo, String>,
+}
+
+/// Importi totali di un computo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImportiComputo {
+    /// Totale.
+    pub totale: Importo,
+    /// Lavori.
+    pub totale_lavori: Importo,
+    /// Oneri della sicurezza.
+    pub totale_oneri_sicurezza: Importo,
+    /// Manodopera.
+    pub totale_manodopera: Importo,
+}
+
+impl From<&RiepilogoComputo> for ImportiComputo {
+    fn from(r: &RiepilogoComputo) -> Self {
+        Self {
+            totale: r.totale,
+            totale_lavori: r.totale_lavori,
+            totale_oneri_sicurezza: r.totale_oneri_sicurezza,
+            totale_manodopera: r.totale_manodopera,
+        }
+    }
+}
+
+/// Validazione e totali di uno stato del progetto, calcolati una volta sola: il
+/// progetto di una sessione cambia solo con [`Sessione::esegui`], `annulla` e
+/// `ripristina`, che portano con sé lo stato del progetto che rendono corrente.
+#[derive(Debug, Clone)]
+struct Stato {
+    problemi: Vec<Problema>,
+    computi: Vec<TotaliComputo>,
+}
+
+impl Stato {
+    fn di(p: &Progetto) -> Self {
+        Self {
+            problemi: valida_progetto(p).problemi,
+            computi: p
+                .computi
+                .iter()
+                .map(|c| TotaliComputo {
+                    computo: c.id,
+                    nome: c.nome.clone(),
+                    totali: p
+                        .calcola_computo(c.id)
+                        .map(|r| ImportiComputo::from(&r))
+                        .map_err(|e| e.to_string()),
+                })
+                .collect(),
+        }
+    }
+
+    fn totali(&self) -> Vec<(String, Option<Importo>)> {
+        self.computi
+            .iter()
+            .map(|c| (c.nome.clone(), c.totali.as_ref().ok().map(|t| t.totale)))
+            .collect()
+    }
+}
+
+fn gia_calcolato(stato: Stato) -> OnceLock<Stato> {
+    let s = OnceLock::new();
+    let _ = s.set(stato);
+    s
 }
 
 /// Sessione di lavoro.
@@ -82,6 +162,7 @@ pub struct Sessione {
     politica: Politica,
     modificato: bool,
     prezzari: Vec<(String, Prezzario)>,
+    stato: OnceLock<Stato>,
 }
 
 impl std::fmt::Debug for Sessione {
@@ -98,25 +179,66 @@ impl std::fmt::Debug for Sessione {
 
 /// Identificativo più alto usato nel progetto (tutti gli UUID del documento).
 fn id_massimo(p: &Progetto) -> u128 {
-    fn visita(v: &Value, max: &mut u128) {
-        match v {
-            Value::String(s) => {
-                if s.len() == 36
-                    && let Ok(u) = Uuid::parse_str(s)
-                {
-                    *max = (*max).max(u.as_u128());
-                }
+    use std::cell::{Cell, RefCell};
+    use std::io;
+
+    /// Formatter JSON che non scrive nulla e annota le stringhe di 36 caratteri che
+    /// sono UUID: valori e chiavi delle mappe, senza costruire il documento in memoria.
+    /// Una stringa che contiene un UUID con caratteri di escape non conta (un UUID non
+    /// ne ha); un testo che per caso è un UUID alza il massimo, il che non nuoce.
+    struct Cerca<'a> {
+        stringa: &'a RefCell<String>,
+        valida: &'a Cell<bool>,
+        massimo: &'a Cell<u128>,
+    }
+    impl serde_json::ser::Formatter for Cerca<'_> {
+        fn begin_string<W: ?Sized + io::Write>(&mut self, _: &mut W) -> io::Result<()> {
+            self.stringa.borrow_mut().clear();
+            self.valida.set(true);
+            Ok(())
+        }
+        fn write_string_fragment<W: ?Sized + io::Write>(
+            &mut self,
+            _: &mut W,
+            frammento: &str,
+        ) -> io::Result<()> {
+            let mut s = self.stringa.borrow_mut();
+            if s.len().saturating_add(frammento.len()) <= 36 {
+                s.push_str(frammento);
+            } else {
+                self.valida.set(false);
             }
-            Value::Array(a) => a.iter().for_each(|x| visita(x, max)),
-            Value::Object(o) => o.values().for_each(|x| visita(x, max)),
-            _ => {}
+            Ok(())
+        }
+        fn write_char_escape<W: ?Sized + io::Write>(
+            &mut self,
+            _: &mut W,
+            _: serde_json::ser::CharEscape,
+        ) -> io::Result<()> {
+            self.valida.set(false);
+            Ok(())
+        }
+        fn end_string<W: ?Sized + io::Write>(&mut self, _: &mut W) -> io::Result<()> {
+            let s = self.stringa.borrow();
+            if self.valida.get()
+                && s.len() == 36
+                && let Ok(u) = Uuid::parse_str(&s)
+            {
+                self.massimo.set(self.massimo.get().max(u.as_u128()));
+            }
+            Ok(())
         }
     }
-    let mut max = 0;
-    if let Ok(v) = serde_json::to_value(p) {
-        visita(&v, &mut max);
-    }
-    max
+
+    let (stringa, valida, massimo) = (RefCell::new(String::new()), Cell::new(false), Cell::new(0));
+    let f = Cerca {
+        stringa: &stringa,
+        valida: &valida,
+        massimo: &massimo,
+    };
+    let mut ser = serde_json::Serializer::with_formatter(io::sink(), f);
+    let _ = serde::Serialize::serialize(p, &mut ser);
+    massimo.get()
 }
 
 /// Chiave di confronto di un problema: indipendente dai numeri d'ordine, che cambiano
@@ -137,18 +259,6 @@ fn chiave(p: &Problema) -> String {
     format!("{:?}|{}|{}", p.gravita, p.codice, percorso)
 }
 
-fn totali(p: &Progetto) -> Vec<(String, Option<Importo>)> {
-    p.computi
-        .iter()
-        .map(|c| {
-            (
-                c.nome.clone(),
-                p.calcola_computo(c.id).ok().map(|r| r.totale),
-            )
-        })
-        .collect()
-}
-
 impl Sessione {
     /// Sessione su un progetto esistente.
     #[must_use]
@@ -162,6 +272,7 @@ impl Sessione {
             politica: Politica::default(),
             modificato: false,
             prezzari: Vec::new(),
+            stato: OnceLock::new(),
         }
     }
 
@@ -251,10 +362,28 @@ impl Sessione {
         &self.prezzari
     }
 
+    fn stato(&self) -> &Stato {
+        self.stato.get_or_init(|| Stato::di(&self.progetto))
+    }
+
+    /// Problemi di validazione del progetto corrente (calcolati una volta per ogni
+    /// stato del progetto).
+    #[must_use]
+    pub fn problemi(&self) -> &[Problema] {
+        &self.stato().problemi
+    }
+
+    /// Totali dei computi del progetto corrente, nell'ordine dei computi (calcolati una
+    /// volta per ogni stato del progetto).
+    #[must_use]
+    pub fn totali_computi(&self) -> &[TotaliComputo] {
+        &self.stato().computi
+    }
+
     fn calcola(
         &self,
         comandi: &[Comando],
-    ) -> Result<(Progetto, GeneratoreSequenziale, Esito), ErroreApplicazione> {
+    ) -> Result<(Progetto, GeneratoreSequenziale, Esito, Stato), ErroreApplicazione> {
         if comandi.is_empty() {
             return Err(ErroreApplicazione::NessunComando);
         }
@@ -269,17 +398,20 @@ impl Sessione {
                 descrizione,
             });
         }
-        let prima = valida_progetto(&self.progetto).problemi;
-        let dopo = valida_progetto(&copia).problemi;
+        let prima_stato = self.stato();
+        let dopo_stato = Stato::di(&copia);
+        let (prima, dopo) = (&prima_stato.problemi, &dopo_stato.problemi);
         let chiavi_prima: BTreeSet<String> = prima.iter().map(chiave).collect();
         let chiavi_dopo: BTreeSet<String> = dopo.iter().map(chiave).collect();
         let nuovi: Vec<Problema> = dopo
-            .into_iter()
+            .iter()
             .filter(|p| !chiavi_prima.contains(&chiave(p)))
+            .cloned()
             .collect();
         let risolti: Vec<Problema> = prima
-            .into_iter()
+            .iter()
             .filter(|p| !chiavi_dopo.contains(&chiave(p)))
+            .cloned()
             .collect();
         if self.politica.rifiuta_nuovi_errori {
             let errori: Vec<Problema> = nuovi
@@ -291,8 +423,8 @@ impl Sessione {
                 return Err(ErroreApplicazione::NuoviErrori { problemi: errori });
             }
         }
-        let t_prima = totali(&self.progetto);
-        let t_dopo = totali(&copia);
+        let t_prima = prima_stato.totali();
+        let t_dopo = dopo_stato.totali();
         let mut variazioni = Vec::new();
         for (nome, dopo) in &t_dopo {
             let prima = t_prima
@@ -326,6 +458,7 @@ impl Sessione {
                 problemi_risolti: risolti,
                 totali: variazioni,
             },
+            dopo_stato,
         ))
     }
 
@@ -334,7 +467,7 @@ impl Sessione {
     /// # Errors
     /// Come [`Sessione::esegui`].
     pub fn prova(&self, comandi: &[Comando]) -> Result<Esito, ErroreApplicazione> {
-        self.calcola(comandi).map(|(_, _, e)| e)
+        self.calcola(comandi).map(|(_, _, e, _)| e)
     }
 
     /// Esegue i comandi come un unico passo atomico.
@@ -343,15 +476,17 @@ impl Sessione {
     /// Nessun comando, comando non applicabile (con il suo indice), nuovi errori di
     /// validazione: in tutti i casi il progetto resta invariato.
     pub fn esegui(&mut self, comandi: &[Comando]) -> Result<Esito, ErroreApplicazione> {
-        let (nuovo, g, mut esito) = self.calcola(comandi)?;
+        let (nuovo, g, mut esito, stato) = self.calcola(comandi)?;
         let descrizione = match esito.comandi.as_slice() {
             [unico] => unico.descrizione.clone(),
             molti => format!("{} comandi", molti.len()),
         };
         let precedente = std::mem::replace(&mut self.progetto, nuovo);
+        let stato_precedente = std::mem::replace(&mut self.stato, gia_calcolato(stato));
         self.annulla.push(Passo {
             descrizione,
             progetto: precedente,
+            stato: stato_precedente,
         });
         if self.annulla.len() > self.politica.limite_annulla {
             self.annulla.remove(0);
@@ -373,9 +508,11 @@ impl Sessione {
             .pop()
             .ok_or(ErroreApplicazione::NienteDaAnnullare)?;
         let attuale = std::mem::replace(&mut self.progetto, passo.progetto);
+        let stato = std::mem::replace(&mut self.stato, passo.stato);
         self.ripristina.push(Passo {
             descrizione: passo.descrizione.clone(),
             progetto: attuale,
+            stato,
         });
         self.modificato = true;
         Ok(passo.descrizione)
@@ -391,11 +528,99 @@ impl Sessione {
             .pop()
             .ok_or(ErroreApplicazione::NienteDaRipristinare)?;
         let attuale = std::mem::replace(&mut self.progetto, passo.progetto);
+        let stato = std::mem::replace(&mut self.stato, passo.stato);
         self.annulla.push(Passo {
             descrizione: passo.descrizione.clone(),
             progetto: attuale,
+            stato,
         });
         self.modificato = true;
         Ok(passo.descrizione)
+    }
+}
+
+#[cfg(test)]
+mod prove {
+    use super::*;
+
+    /// Il calcolo di prima: tutto il progetto come albero JSON, solo i valori.
+    fn id_massimo_con_albero(p: &Progetto) -> u128 {
+        fn visita(v: &Value, max: &mut u128) {
+            match v {
+                Value::String(s) => {
+                    if let Ok(u) = Uuid::parse_str(s).map(|u| u.as_u128())
+                        && s.len() == 36
+                    {
+                        *max = (*max).max(u);
+                    }
+                }
+                Value::Array(a) => a.iter().for_each(|x| visita(x, max)),
+                Value::Object(o) => o.iter().for_each(|(k, x)| {
+                    if let Ok(u) = Uuid::parse_str(k)
+                        && k.len() == 36
+                    {
+                        *max = (*max).max(u.as_u128());
+                    }
+                    visita(x, max);
+                }),
+                _ => {}
+            }
+        }
+        let mut max = 0;
+        visita(&serde_json::to_value(p).unwrap(), &mut max);
+        max
+    }
+
+    #[test]
+    fn identificativo_massimo_come_con_l_albero_json() {
+        for testo in [
+            include_str!("../../opencomputo-core/tests/fixtures/progetto_esempio_v1.json"),
+            include_str!("../../opencomputo-core/tests/fixtures/progetto_esempio_v4.json"),
+            include_str!("../../opencomputo-core/tests/fixtures/progetto_esempio_v7.json"),
+        ] {
+            let mut p = opencomputo_core::schema::importa_json(testo).unwrap();
+            let base = id_massimo(&p);
+            assert_eq!(base, id_massimo_con_albero(&p));
+            // Un testo che contiene un UUID tra altri caratteri non conta.
+            p.metadati.titolo = "\"ffffffff-ffff-ffff-ffff-ffffffffffff\"".into();
+            assert_eq!(id_massimo(&p), base);
+            // Un testo che è esattamente un UUID conta (alza il massimo: non nuoce).
+            p.metadati.titolo = "ffffffff-ffff-ffff-ffff-fffffffffff0".into();
+            assert_eq!(id_massimo(&p), u128::MAX - 15);
+        }
+    }
+
+    /// La validazione e i totali in memoria sono quelli del progetto corrente dopo ogni
+    /// modifica, annullamento e ripristino.
+    #[test]
+    fn stato_in_memoria_sempre_del_progetto_corrente() {
+        let p = opencomputo_core::schema::importa_json(include_str!(
+            "../../opencomputo-core/tests/fixtures/progetto_esempio_v7.json"
+        ))
+        .unwrap();
+        let mut s = Sessione::new(p);
+        let verifica = |s: &Sessione| {
+            let atteso = Stato::di(s.progetto());
+            assert_eq!(s.problemi(), atteso.problemi.as_slice());
+            assert_eq!(s.totali_computi(), atteso.computi.as_slice());
+        };
+        verifica(&s);
+        let modifica: Vec<Comando> = serde_json::from_value(serde_json::json!([
+            {"comando": "modifica_rigo", "voce": 1, "numero": 1,
+             "rigo": {"descrizione": "Nuovo", "lunghezza": "7", "larghezza": "3", "altezza_peso": "2"}}
+        ]))
+        .unwrap();
+        let prima = s.totali_computi().to_vec();
+        s.esegui(&modifica).unwrap();
+        verifica(&s);
+        assert_ne!(s.totali_computi(), prima.as_slice());
+        s.annulla().unwrap();
+        verifica(&s);
+        assert_eq!(s.totali_computi(), prima.as_slice());
+        s.ripristina().unwrap();
+        verifica(&s);
+        // Una prova non cambia nulla.
+        let _ = s.prova(&modifica);
+        verifica(&s);
     }
 }

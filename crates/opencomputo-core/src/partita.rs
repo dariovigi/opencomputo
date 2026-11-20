@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::errore::{ErroreCalcolo, ErroreLocalizzato};
 use crate::id::{PrezzarioId, VocePrezzarioId};
 use crate::misura::{QuantitaRiferite, RigoMisura, SenzaRiferimenti, quantita_totale_con};
-use crate::numeri::{Importo, Percentuale, Prezzo, Quantita, RegoleArrotondamento};
+use crate::numeri::{Importo, Percentuale, Prezzo, Quantita, RegoleArrotondamento, VALORE_MASSIMO};
 use crate::prezzario::{NaturaVoce, Prezzario, VocePrezzario};
 use crate::riferimento::Riferimento;
 
@@ -281,7 +281,14 @@ pub fn calcola_partita_con(
             p.map(|p| p.quota_di(importo, regole)).transpose()
         };
     let calcolo = || -> Result<CalcoloPartita, ErroreCalcolo> {
+        let entro = |v: rust_decimal::Decimal| v.abs() <= VALORE_MASSIMO;
+        if !entro(quantita.valore()) {
+            return Err(ErroreCalcolo::FuoriLimite);
+        }
         let importo = prezzo.prezzo.per_quantita(quantita, regole)?;
+        if !entro(importo.valore()) {
+            return Err(ErroreCalcolo::FuoriLimite);
+        }
         Ok(CalcoloPartita {
             quantita,
             importo,
@@ -300,6 +307,7 @@ mod tests {
     use super::*;
     use crate::id::RigoMisuraId;
     use rust_decimal_macros::dec;
+    use std::sync::Arc;
 
     fn prezzario() -> Prezzario {
         let mut p = Prezzario::new(PrezzarioId::da_u128(1), "Elenco");
@@ -319,7 +327,7 @@ mod tests {
     fn fotografia_indipendente_dal_prezzario() {
         let mut p = prezzario();
         let applicato = PrezzoApplicato::da_voce(&p, &p.voci[0]);
-        p.voci[0].prezzo = Prezzo::new(dec!(275.00));
+        Arc::make_mut(&mut p.voci[0]).prezzo = Prezzo::new(dec!(275.00));
         assert_eq!(applicato.prezzo, Prezzo::new(dec!(250.00)));
         let diff = applicato.confronta(&p.voci[0]);
         assert_eq!(diff.len(), 1);
@@ -330,8 +338,8 @@ mod tests {
     fn riallineamento_esplicito() {
         let mut p = prezzario();
         let mut applicato = PrezzoApplicato::da_voce(&p, &p.voci[0]);
-        p.voci[0].prezzo = Prezzo::new(dec!(275.00));
-        p.voci[0].descrizione_breve = "Muratura in blocchi".into();
+        Arc::make_mut(&mut p.voci[0]).prezzo = Prezzo::new(dec!(275.00));
+        Arc::make_mut(&mut p.voci[0]).descrizione_breve = "Muratura in blocchi".into();
         let diff = applicato.riallinea(&p, &p.voci[0]);
         assert_eq!(diff.len(), 2);
         assert_eq!(applicato.prezzo, Prezzo::new(dec!(275.00)));
@@ -362,5 +370,31 @@ mod tests {
         assert_eq!(c.importo, Importo::new(dec!(825.00)));
         assert_eq!(c.importo_manodopera, Some(Importo::new(dec!(330.00))));
         assert_eq!(c.importo_sicurezza, None);
+    }
+
+    /// Regressione (campagna del 2026-11-20): una quantità di 10^26 era accettata e i
+    /// calcoli successivi sui totali (ripartizione mensile del cronoprogramma)
+    /// superavano la capacità del tipo decimale.
+    #[test]
+    fn quantita_e_importi_oltre_il_limite() {
+        let p = prezzario();
+        let applicato = PrezzoApplicato::da_voce(&p, &p.voci[0]);
+        let rigo = |q| vec![RigoMisura::misura(RigoMisuraId::da_u128(1), "").con_lunghezza(q)];
+        let regole = RegoleArrotondamento::default();
+        let errore = |q| calcola_partita(&applicato, &rigo(q), &regole).map_err(|e| e.errore);
+        // Al limite: 4 × 10^12 × 250 = 10^15.
+        assert!(errore(dec!(4000000000000)).is_ok());
+        assert_eq!(
+            errore(dec!(4000000000000.01)),
+            Err(ErroreCalcolo::FuoriLimite)
+        );
+        assert_eq!(
+            errore(dec!(-99999999999999999999999999.99)),
+            Err(ErroreCalcolo::FuoriLimite)
+        );
+        assert_eq!(
+            errore(dec!(1000000000000001)),
+            Err(ErroreCalcolo::FuoriLimite)
+        );
     }
 }

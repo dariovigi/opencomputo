@@ -18,8 +18,8 @@ use opencomputo_core::progetto::Progetto;
 
 use super::{
     Allineamento, Carattere, Colore, Intestazione, Linea, OpzioniTradizionale, RIENTRO, SOTTILE,
-    SPESSO, Tela, Testo, X_DESTRA, X_SINISTRA, Y_FONDO, capacita, disegna_linee, file_pdf,
-    larghezza, numero, riduci, righe,
+    SPESSO, Testo, X_DESTRA, X_SINISTRA, Y_FONDO, capacita, disegna_linee, file_pdf, larghezza,
+    numero, riduci, righe,
 };
 use crate::documento::{self, Documento, StileRiga, Tabella, Valore};
 use crate::pdf::RisultatoPdf;
@@ -505,17 +505,21 @@ pub fn documento(
 
     let mut tele = Vec::new();
     if o.frontespizio {
-        let mut t = Tela::default();
-        int.frontespizio(&mut t, &titolo.to_uppercase());
+        let mut t = o.tela(tele.len());
+        if t.attiva() {
+            int.frontespizio(&mut t, &titolo.to_uppercase());
+        }
         tele.push(t);
     }
     let primo = tele.len() + 1;
     let pagine: Vec<Vec<Linea>> = pg.pagine.into_iter().filter(|l| !l.is_empty()).collect();
     for (i, linee) in pagine.iter().enumerate() {
-        let mut t = Tela::default();
-        int.cornice(&mut t, primo + i, alto);
-        disegna_linee(&mut t, linee, inizio, SCARTO);
+        let mut t = o.tela(tele.len());
+        if t.attiva() {
+            int.cornice(&mut t, primo + i, alto);
+            disegna_linee(&mut t, linee, inizio, SCARTO);
+        }
         tele.push(t);
     }
-    file_pdf(tele, &titolo.to_uppercase(), o.comprimi)
+    file_pdf(tele, &titolo.to_uppercase(), o)
 }

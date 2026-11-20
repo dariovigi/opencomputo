@@ -708,26 +708,32 @@ pub fn computo(
     };
     let mut tele = Vec::new();
     if o.frontespizio {
-        let mut t = Tela::default();
-        int.frontespizio(&mut t, titolo);
+        let mut t = o.tela(tele.len());
+        if t.attiva() {
+            int.frontespizio(&mut t, titolo);
+        }
         tele.push(t);
     }
     let primo = tele.len() + 1;
     let regole = &p.regole;
     for (i, pc) in pagine.iter().enumerate() {
-        let mut t = Tela::default();
-        pagina(&mut t, &int, primo + i, pc, regole, &k.griglia);
+        let mut t = o.tela(tele.len());
+        if t.attiva() {
+            pagina(&mut t, &int, primo + i, pc, regole, &k.griglia);
+        }
         tele.push(t);
     }
     if let Some((pagine_riepilogo, colonne)) = &pagine_riepilogo {
         let primo = primo + pagine.len();
         for (i, pc) in pagine_riepilogo.iter().enumerate() {
-            let mut t = Tela::default();
-            super::riepilogo::pagina(&mut t, &int, primo + i, pc, colonne);
+            let mut t = o.tela(tele.len());
+            if t.attiva() {
+                super::riepilogo::pagina(&mut t, &int, primo + i, pc, colonne);
+            }
             tele.push(t);
         }
     }
-    Ok(file_pdf(tele, titolo, o.comprimi))
+    Ok(file_pdf(tele, titolo, o))
 }
 
 /// Luogo e data, «Il Tecnico» e il nome del progettista, poi chiude la pagina.

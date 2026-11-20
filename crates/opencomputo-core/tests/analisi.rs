@@ -33,6 +33,7 @@ use opencomputo_core::analisi::{
 use opencomputo_core::prelude::*;
 use opencomputo_core::validazione::valida_progetto;
 use rust_decimal_macros::dec;
+use std::sync::Arc;
 
 const ELENCO: PrezzarioId = PrezzarioId::da_u128(1);
 const MALTA: VocePrezzarioId = VocePrezzarioId::da_u128(10);
@@ -302,9 +303,9 @@ fn fabbisogno_di_cantiere() {
             .push(RigoMisura::misura(RigoMisuraId::da_u128(id * 10), "").con_lunghezza(q));
         x
     };
-    c.voci.push(voce(51, MUR, dec!(100)));
-    c.voci.push(voce(52, MALTA, dec!(2)));
-    c.voci.push(voce(53, MATTONI, dec!(10)));
+    c.voci.push(Arc::new(voce(51, MUR, dec!(100))));
+    c.voci.push(Arc::new(voce(52, MALTA, dec!(2))));
+    c.voci.push(Arc::new(voce(53, MATTONI, dec!(10))));
     p.computi.push(c);
     let f = p.fabbisogno(ComputoId::da_u128(50)).unwrap();
     let righe: Vec<(String, Decimal, Decimal)> = f
@@ -446,7 +447,7 @@ fn analisi_riportata_alle_quantita_del_computo() {
     semplice
         .righi
         .push(RigoMisura::misura(RigoMisuraId::da_u128(520), "").con_lunghezza(dec!(10)));
-    c.voci = vec![voce, semplice];
+    c.voci = vec![Arc::new(voce), Arc::new(semplice)];
     p.computi.push(c);
     let a = p.analisi_computo(ComputoId::da_u128(50)).unwrap();
     let importi: Vec<Decimal> = a[0].elementi.iter().map(|x| x.importo.valore()).collect();

@@ -18,6 +18,7 @@
 //! Le voci di computo (`CollectionVC`) e le analisi non sono importate.
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 use jiff::civil::DateTime;
 use opencomputo_core::classificazione::Classe;
@@ -697,7 +698,7 @@ fn importa_voce<G: GeneratoreId>(
     prov.identificativo_originale = (!id_dcf.is_empty()).then_some(id_dcf);
     prov.dati_originali = dati;
     let id: VocePrezzarioId = generatore.nuovo();
-    progetto.elenco_prezzi.voci.push(VocePrezzario {
+    progetto.elenco_prezzi.voci.push(Arc::new(VocePrezzario {
         id,
         codice,
         descrizione_breve: breve.to_owned(),
@@ -711,6 +712,6 @@ fn importa_voce<G: GeneratoreId>(
         analisi: None,
         nuovo_prezzo: None,
         provenienza: Some(prov),
-    });
+    }));
     st.voci_elenco += 1;
 }
