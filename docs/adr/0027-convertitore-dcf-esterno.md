@@ -67,7 +67,9 @@ OpenComputo non sa che cosa faccia il convertitore esterno con i documenti.
    assoluti, 200 MB, 120 secondi):
    * ambiente ridotto alle variabili indispensabili (`PATH`, cartella personale e
      temporanea, lingua, cartella di sistema su Windows): eventuali credenziali
-     dell'ambiente di OpenComputo non arrivano al programma;
+     dell'ambiente di OpenComputo non arrivano al programma (il sistema aggiunge da sé
+     solo variabili senza dati riservati: `__CF_USER_TEXT_ENCODING` su macOS, quelle che
+     iniziano con `=` su Windows);
    * cartella di lavoro temporanea privata (0700 su Unix, nome nuovo a ogni invocazione),
      rimossa alla fine anche in caso di errore; su Windows nessuna finestra di console;
    * stdout, stderr e resoconto letti fino a 1 MB, riportati fino a 100.000 caratteri,

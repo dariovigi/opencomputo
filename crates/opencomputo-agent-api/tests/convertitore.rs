@@ -620,16 +620,28 @@ fn ambiente_ridotto() {
     let r = t.importa(&mut s, "ambiente");
     let nomi = r["convertitore"]["testo"].as_str().unwrap().to_owned();
     for n in nomi.lines() {
-        // Windows aggiunge da sé alcune variabili di sistema al processo figlio.
-        let di_sistema = cfg!(windows) && n.starts_with('=');
         assert!(
-            di_sistema
+            di_sistema(n)
                 || AMBIENTE_CONSENTITO
                     .iter()
                     .any(|c| c.eq_ignore_ascii_case(n)),
             "variabile passata al convertitore: {n}"
         );
     }
+    // Controllo positivo: una variabile dell'ambiente di prova (cargo la imposta per
+    // ogni test) non arriva al convertitore.
+    if std::env::var_os("CARGO_MANIFEST_DIR").is_some() {
+        assert!(!nomi.lines().any(|n| n == "CARGO_MANIFEST_DIR"), "{nomi}");
+    }
+}
+
+/// Variabili che il sistema operativo aggiunge da sé a ogni processo, anche con
+/// l'ambiente svuotato: su Windows quelle che iniziano con `=` (cartelle correnti delle
+/// unità), su macOS `__CF_USER_TEXT_ENCODING` e le `VERSIONER_*` (codifica del testo,
+/// versioni degli interpreti di sistema). Non contengono credenziali.
+fn di_sistema(nome: &str) -> bool {
+    (cfg!(windows) && nome.starts_with('='))
+        || (cfg!(target_os = "macos") && (nome.starts_with("__CF") || nome.contains("VERSIONER")))
 }
 
 fn durata_massima() {
