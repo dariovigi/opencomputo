@@ -103,8 +103,9 @@ export async function configuraConvertitore() {
     titolo: 'Convertitore DCF esterno',
     contenuto: h('div', { class: 'convertitore' },
       h('p', null, st.avviso),
-      h('p', null, 'Il programma viene lanciato come «programma convert <documento.dcf> <progetto.ocp> --report <resoconto.txt>».'),
-      h('p', null, h('strong', null, 'Programma: '), st.programma ? h('code', null, st.programma) : 'nessuno'),
+      h('p', null, 'Il programma viene lanciato come «dcf convert <input> <output> --report <resoconto.txt>» (la direzione dipende dal contenuto dell\'input), poi «dcf confronta» per la verifica.'),
+      h('p', null, h('strong', null, 'Programma: '), st.programma ? h('code', null, st.programma) : 'nessuno',
+        st.origine === 'DCF_BIN' ? ' (dalla variabile DCF_BIN)' : null),
       st.problema ? h('p', { class: 'errore' }, st.problema) : null),
     pulsanti,
   });
@@ -135,18 +136,60 @@ export async function importaConConvertitore() {
   const r = await sostituisciProgetto({ richiesta: 'importa_con_convertitore', origine }, { chiudiPrima: false });
   if (!r) return;
   const imp = r.importazione;
-  const conv = r.convertitore;
   modale({
     titolo: 'Conversione completata',
     larga: true,
     contenuto: h('div', { class: 'convertitore' },
-      h('p', null, `Convertito con «${conv.programma}»: ${imp.voci_elenco} voci di elenco prezzi, ${imp.voci_computo} voci di computo.`),
+      h('p', null, `Convertito con «${r.convertitore.programma}»: ${imp.voci_elenco} voci di elenco prezzi, ${imp.voci_computo} voci di computo.`),
+      verdetto(r.verifica),
       h('p', null, 'Il progetto è stato prodotto da un programma esterno: controllarlo (vista «Problemi») prima di usarlo.'),
-      h('h4', null, 'Resoconto del convertitore'),
-      h('pre', { class: 'resoconto' }, conv.testo || '(nessun resoconto)'),
-      conv.messaggi ? [h('h4', null, 'Messaggi'), h('pre', { class: 'resoconto' }, conv.messaggi)] : null,
-      conv.troncato ? h('p', { class: 'vuoto' }, 'Il resoconto è stato troncato.') : null,
+      testiConversione(r.convertitore, r.verifica),
       h('p', { class: 'vuoto' }, 'Il progetto importato non è ancora salvato: usare «Salva con nome».')),
+  });
+}
+
+/** Verdetto della verifica di fedeltà (`confronta`) del convertitore esterno. */
+function verdetto(v) {
+  if (v.preservati) return h('p', { class: 'verdetto ok' }, 'Verifica di fedeltà: PREZZI PRESERVATI (prezzi, quantità, importi e SAL coincidono).');
+  if (v.eseguita) return h('p', { class: 'verdetto avviso' }, 'Verifica di fedeltà: il confronto ha trovato differenze, vedi il dettaglio.');
+  return h('p', { class: 'verdetto avviso' }, 'Verifica di fedeltà non eseguita: ', v.dettaglio);
+}
+
+/** Resoconto, messaggi e dettaglio della verifica, come testo. */
+function testiConversione(conv, v) {
+  return [
+    h('h4', null, 'Resoconto del convertitore'),
+    h('pre', { class: 'resoconto' }, conv.testo || '(nessun resoconto)'),
+    conv.messaggi ? [h('h4', null, 'Messaggi'), h('pre', { class: 'resoconto' }, conv.messaggi)] : null,
+    v.eseguita ? h('details', null, h('summary', null, 'Dettaglio della verifica'), h('pre', { class: 'resoconto' }, v.dettaglio)) : null,
+    conv.troncato ? h('p', { class: 'vuoto' }, 'Un testo del convertitore è stato troncato.') : null,
+  ];
+}
+
+/** Esporta il progetto in DCF con il convertitore esterno e mostra resoconto e verifica. */
+export async function esportaConConvertitore() {
+  if (!stato.info) { notifica('Nessun progetto aperto', 'avviso'); return; }
+  let st;
+  try { st = await chiedi({ richiesta: 'convertitore_stato' }); } catch (e) { mostraErrore(e); return; }
+  if (!st.utilizzabile) {
+    st = await configuraConvertitore();
+    if (!st?.utilizzabile) return;
+  }
+  const nome = (stato.info.titolo || 'progetto').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 60) + '.dcf';
+  let percorso = await scegliSalvataggio('Esporta DCF con il convertitore esterno', FILTRO_DCF, nome);
+  if (!percorso) return;
+  if (!/\.dcf$/i.test(percorso)) percorso += '.dcf';
+  let r;
+  try { r = await chiedi({ richiesta: 'esporta_con_convertitore', percorso }); } catch (e) { mostraErrore(e); return; }
+  modale({
+    titolo: 'Esportazione completata',
+    larga: true,
+    contenuto: h('div', { class: 'convertitore' },
+      h('p', null, 'File scritto: ', h('code', null, r.file)),
+      r.file_resoconto ? h('p', null, 'Resoconto salvato accanto: ', h('code', null, r.file_resoconto)) : null,
+      verdetto(r.verifica),
+      h('p', null, `Il DCF è prodotto interamente da «${r.resoconto.programma}»: OpenComputo non ne controlla il contenuto.`),
+      testiConversione(r.resoconto, r.verifica)),
   });
 }
 
@@ -211,6 +254,7 @@ function menuAltro() {
           voce('Apri…', apri, `${MOD}O`),
           voce('Importa da PriMus (XPWE, DCF)…', importa),
           voce('Importa DCF con convertitore esterno…', importaConConvertitore),
+          voce('Esporta DCF con convertitore esterno…', esportaConConvertitore),
           voce('Convertitore DCF esterno…', configuraConvertitore),
           h('hr'),
           voce('Salva', salva, `${MOD}S`),

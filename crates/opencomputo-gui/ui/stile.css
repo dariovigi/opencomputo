@@ -728,3 +728,7 @@ table.crono-legami, table.crono-mesi { border-collapse: collapse; width: 100%; f
 .convertitore code { word-break: break-all; }
 .convertitore .errore { color: var(--errore); }
 .convertitore pre.resoconto { white-space: pre-wrap; max-height: 260px; overflow: auto; font-size: 12px; font-family: var(--mono); background: var(--voce); color: var(--testo); padding: 8px; border-radius: 6px; }
+.convertitore .verdetto { padding: 6px 10px; border-radius: 6px; font-weight: 600; }
+.convertitore .verdetto.ok { color: var(--ok); background: var(--ok-sfondo); }
+.convertitore .verdetto.avviso { color: var(--avviso); background: var(--avviso-sfondo); }
+.convertitore details summary { cursor: pointer; color: var(--testo-2); margin: 6px 0; }

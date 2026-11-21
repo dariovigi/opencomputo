@@ -1,7 +1,8 @@
-// Convertitore DCF esterno (ADR 0027) dall'interfaccia: configurazione al primo uso con
-// l'avviso, conversione con il resoconto, errore del convertitore, rimozione.
-// Il convertitore è finto: uno script Node che rispetta il contratto della CLI esterna
-// (`convert <origine> <uscita> --report <resoconto>`) e copia una fixture del progetto.
+// Convertitore DCF/OCP esterno (ADR 0027) dall'interfaccia: configurazione al primo uso
+// con l'avviso, import con resoconto e verifica, export in DCF, errore del convertitore,
+// rimozione. Il convertitore è finto: uno script Node che rispetta il contratto della CLI
+// esterna (`convert <input> <output> --report <resoconto>` con la direzione decisa dal
+// contenuto, `confronta <a> <b>`).
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,10 +17,21 @@ const FIXTURE = path.join(RADICE, 'crates/opencomputo-core/tests/fixtures/proget
 
 const FINTO = `#!/usr/bin/env node
 const fs = require('node:fs');
-const [, , comando, origine, uscita, opzione, resoconto] = process.argv;
+const json = (f) => fs.readFileSync(f)[0] === 0x7b;
+const [, , comando, a, b, opzione, resoconto] = process.argv;
+if (comando === 'confronta') {
+  if (json(a) === json(b)) { process.stderr.write('errore: confronta richiede un file .dcf e un file .ocp\\n'); process.exit(1); }
+  process.stdout.write('  ok  P.01   21.15 -> 21.15\\nESITO: elenco prezzi 6/6\\n       -> PREZZI PRESERVATI\\n');
+  process.exit(0);
+}
 if (comando !== 'convert' || opzione !== '--report') { process.stderr.write('errore: argomenti\\n'); process.exit(2); }
-if (origine.includes('errore')) { process.stderr.write('errore: formato non riconosciuto\\n'); process.exit(1); }
-fs.copyFileSync(${JSON.stringify(FIXTURE)}, uscita);
+if (a.includes('errore')) { process.stderr.write('errore: formato non riconosciuto\\n'); process.exit(1); }
+if (json(a)) {
+  fs.writeFileSync(b, 'AAMVHFSS dcf finto');
+  fs.writeFileSync(resoconto, 'convertito progetto.ocp (.ocp) -> convertito.dcf (.dcf)\\n');
+  process.exit(0);
+}
+fs.copyFileSync(${JSON.stringify(FIXTURE)}, b);
 fs.writeFileSync(resoconto, 'trasferito (3):\\n  + elenco prezzi: 6 voci\\n<b>non HTML</b>\\n');
 process.stdout.write('convertito\\n');
 `;
@@ -62,6 +74,8 @@ test('primo uso: avviso, scelta del programma, conversione con resoconto', async
   // Il testo del convertitore entra come testo, mai come HTML.
   assert.match(resoconto, /<b>non HTML<\/b>/);
   assert.equal(await esito.locator('pre.resoconto b').count(), 0);
+  // Verifica di fedeltà eseguita dopo la conversione.
+  assert.match(await esito.locator('.verdetto.ok').textContent(), /PREZZI PRESERVATI/);
   await esito.locator('button', { hasText: 'OK' }).click();
   assert.match(await p().locator('.titolo-progetto').textContent(), /Nuova scuola primaria/);
   // Configurazione salvata nella cartella di configurazione.
@@ -80,6 +94,20 @@ test('errore del convertitore: messaggio, progetto invariato', async () => {
   assert.equal(info.ok, true, JSON.stringify(info));
   assert.equal(info.risultato.titolo, 'Nuova scuola primaria');
   assert.match(await p().locator('.titolo-progetto').textContent(), /Nuova scuola primaria/);
+});
+
+test('export in DCF: file e resoconto accanto, verifica', async () => {
+  const dcf = path.join(b.cartella, 'Nuova scuola primaria.dcf');
+  await b.dialogo(dcf);
+  await menu('Esporta DCF con convertitore esterno');
+  const esito = p().locator('.modale', { hasText: 'Esportazione completata' });
+  await esito.waitFor();
+  assert.match(await esito.textContent(), /Nuova scuola primaria\.report\.txt/);
+  assert.match(await esito.locator('.verdetto.ok').textContent(), /PREZZI PRESERVATI/);
+  await esito.locator('button', { hasText: 'OK' }).click();
+  assert.equal(await readFile(dcf, 'utf8'), 'AAMVHFSS dcf finto');
+  assert.match(await readFile(path.join(b.cartella, 'Nuova scuola primaria.report.txt'), 'utf8'), /\(\.ocp\) -> convertito\.dcf/);
+  assert.deepEqual(b.errori, []);
 });
 
 test('il convertitore si può togliere', async () => {

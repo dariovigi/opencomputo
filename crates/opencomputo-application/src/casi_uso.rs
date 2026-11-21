@@ -97,10 +97,11 @@ pub fn importa_dcf(
 }
 
 /// Crea un progetto da un DCF con il convertitore esterno scelto dall'utente
-/// (ADR 0027). Il progetto prodotto è letto come un file `.ocp` qualunque.
+/// (ADR 0027) e ne verifica la fedeltà con `confronta`. Il progetto prodotto è letto
+/// come un file `.ocp` qualunque.
 ///
 /// # Errors
-/// Vedi [`crate::convertitore::converti`].
+/// Vedi [`crate::convertitore::importa`].
 pub fn importa_con_convertitore(
     programma: &std::path::Path,
     origine: &std::path::Path,
@@ -109,10 +110,11 @@ pub fn importa_con_convertitore(
         Sessione,
         RapportoImportazione,
         crate::convertitore::Resoconto,
+        crate::convertitore::Verifica,
     ),
     ErroreApplicazione,
 > {
-    let c = crate::convertitore::converti(programma, origine, crate::convertitore::DURATA_MASSIMA)?;
+    let c = crate::convertitore::importa(programma, origine, crate::convertitore::DURATA_MASSIMA)?;
     let p = c.progetto;
     let mut anomalie = vec![Anomalia {
         gravita: Gravita::Informazione,
@@ -123,6 +125,7 @@ pub fn importa_con_convertitore(
         ),
         posizione: None,
     }];
+    anomalie.push(anomalia_verifica(&c.verifica));
     if !c.resoconto.messaggi.is_empty() {
         anomalie.push(Anomalia {
             gravita: Gravita::Avviso,
@@ -140,7 +143,61 @@ pub fn importa_con_convertitore(
         voci_computo: p.computi.iter().map(|c| c.voci.len()).sum(),
         anomalie,
     };
-    Ok((Sessione::new(p), rapporto, c.resoconto))
+    Ok((Sessione::new(p), rapporto, c.resoconto, c.verifica))
+}
+
+/// La verifica di fedeltà come segnalazione del rapporto d'importazione.
+fn anomalia_verifica(v: &crate::convertitore::Verifica) -> Anomalia {
+    let (gravita, codice, messaggio) = if v.preservati {
+        (
+            Gravita::Informazione,
+            "convertitore.verifica_superata",
+            format!(
+                "verifica di fedeltà: {}",
+                crate::convertitore::VERDETTO_PRESERVATI
+            ),
+        )
+    } else if v.eseguita {
+        (
+            Gravita::Avviso,
+            "convertitore.verifica_differenze",
+            "verifica di fedeltà: il confronto ha trovato differenze tra il DCF e il progetto (vedi il dettaglio)".to_owned(),
+        )
+    } else {
+        (
+            Gravita::Avviso,
+            "convertitore.verifica_non_eseguita",
+            format!(
+                "verifica di fedeltà non eseguita: {}",
+                v.dettaglio.chars().take(300).collect::<String>()
+            ),
+        )
+    };
+    Anomalia {
+        gravita,
+        codice: codice.into(),
+        messaggio,
+        posizione: None,
+    }
+}
+
+/// Esporta il progetto in DCF con il convertitore esterno (ADR 0027) e ne verifica la
+/// fedeltà con `confronta`; il resoconto va accanto al file (`<nome>.report.txt`).
+///
+/// # Errors
+/// Regole di arrotondamento non valide; vedi [`crate::convertitore::esporta`].
+pub fn esporta_con_convertitore(
+    p: &Progetto,
+    programma: &std::path::Path,
+    destinazione: &std::path::Path,
+) -> Result<crate::convertitore::Esportazione, ErroreApplicazione> {
+    regole_valide(p)?;
+    crate::convertitore::esporta(
+        programma,
+        p,
+        destinazione,
+        crate::convertitore::DURATA_MASSIMA,
+    )
 }
 
 /// `true` se il primo carattere significativo (dopo BOM e spazi) è `<`.

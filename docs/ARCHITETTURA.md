@@ -168,7 +168,7 @@ Un solo modulo: `codifica`/`decodifica` (byte ↔ `Progetto`, senza filesystem),
 | `comandi` | `Comando` (JSON), riferimenti per codice, numero e nome, `applica` sulle API del core |
 | `sessione` | `Sessione`: richieste atomiche, politica di validazione, `Esito`, prova, annulla/ripristina, prezzari di consultazione, generatore di identificativi |
 | `casi_uso` | import XPWE/DCF, lettura di prezzari, export XPWE, report |
-| `convertitore` | esecuzione del convertitore DCF esterno scelto dall'utente: contratto della riga di comando, ambiente ridotto, cartella temporanea, durata massima (ADR 0027) |
+| `convertitore` | convertitore DCF/OCP esterno scelto dall'utente (il ponte `dcf_bridge.py` in Rust): import, export, verifica `confronta`, `info`; ambiente ridotto, cartella temporanea, durata massima, scrittura atomica (ADR 0027) |
 | `errore` | `ErroreApplicazione`, serializzabile con un codice stabile |
 
 Dipende da `core`, `storage`, i formati e `io`. Non contiene regole di dominio proprie.
@@ -179,7 +179,7 @@ Dipende da `core`, `storage`, i formati e `io`. Non contiene regole di dominio p
 |--------|-----------|
 | `servizio` | `Richiesta`, `Servizio` con stato, risposte JSON, ciclo a righe |
 | `riepilogo` | `info`, `valida`, `cerca` in JSON |
-| `convertitore` | configurazione del convertitore DCF esterno (`convertitore.json`) e avviso (ADR 0027) |
+| `convertitore` | configurazione del convertitore DCF/OCP esterno (`convertitore.json`, poi `DCF_BIN`) e avviso (ADR 0027) |
 | `schema` | regole ed esempi dei comandi (verificati dai test) |
 | `main.rs` | binario `opencomputo` (`clap`): ogni sottocomando è una sequenza di richieste del servizio |
 
@@ -241,4 +241,4 @@ Le decisioni sono registrate in [`adr/`](adr/):
 * Le decisioni dalla 0015 alla 0024 sono nella cartella [`adr/`](adr/).
 * [0025 — Assistente AI per il computo e listini CSV/JSON](adr/0025-assistente-ai.md)
 * [0026 — Prestazioni con progetti grandi e limiti dei file](adr/0026-prestazioni-e-limiti.md)
-* [0027 — Convertitore DCF esterno](adr/0027-convertitore-dcf-esterno.md)
+* [0027 — Convertitore DCF/OCP esterno](adr/0027-convertitore-dcf-esterno.md)

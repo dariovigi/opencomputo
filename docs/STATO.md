@@ -1,6 +1,6 @@
 # Stato del progetto
 
-Ultimo aggiornamento: 2026-11-21. Ultimo lavoro: **convertitore DCF esterno** (ADR 0027),
+Ultimo aggiornamento: 2026-11-21. Ultimo lavoro: **convertitore DCF/OCP esterno** (ADR 0027),
 dopo **prestazioni, difetti e vulnerabilità** (ADR 0026), dopo la finestra
 ridimensionabile e la verifica su un XPWE reale con voci, dopo **prestazioni e
 robustezza dell'assistente AI** (sezione qui sotto; ADR 0025, decisioni 34–40), dopo le **voci
@@ -25,39 +25,50 @@ computo (vista divisa con «>» e «<»), il trascinamento di voci tra finestre,
 dell'elenco prezzi in DCF, la stampa nel modello tradizionale e il completamento delle
 analisi prezzi.
 
-## Convertitore DCF esterno (2026-11-21)
+## Convertitore DCF/OCP esterno (2026-11-21)
 
-Richiesta del titolare: integrare in OpenComputo un convertitore DCF/OCP di terzi (CLI
-`dcf`, pacchetto «primus-dcf 0.1.0»), di cui ha ricevuto una guida di integrazione come
-plugin MCP. Il programma non può essere caricato fuori dal suo ambiente: non è stato visto
-né provato. Decisioni in ADR 0027.
+Richiesta del titolare: integrare in OpenComputo il convertitore DCF/OCP di terzi (CLI
+`dcf`, pacchetto «primus-dcf 0.1.0»). Una prima versione seguiva una guida per plugin MCP
+(solo import); il titolare l'ha poi fatta sostituire con la seconda guida, «Il
+convertitore DCF/OCP come plugin del vostro programma», e il ponte `dcf_bridge.py`
+(bytecode allegato uguale al sorgente). Il programma non può essere caricato fuori dal
+suo ambiente: non è stato visto né provato. Decisioni in ADR 0027.
 
-* `opencomputo-application::convertitore`: lancia il programma configurato con il
-  contratto `convert <origine> <uscita> --report <resoconto>`, senza shell, con ambiente
-  ridotto, in una cartella temporanea privata, con durata massima e output limitato; il
-  `.ocp` prodotto si legge con i controlli di ogni file.
-* Servizio: `convertitore_stato`, `convertitore_imposta` (in `convertitore.json` nella
-  cartella di configurazione), `importa_con_convertitore`; la sessione si sostituisce
-  solo a conversione riuscita.
-* Interfaccia: menu File → «Importa DCF con convertitore esterno…» (al primo uso avviso e
-  scelta del programma) e «Convertitore DCF esterno…» (cambia o toglie); il resoconto si
-  mostra come testo. Se la conversione fallisce il progetto aperto resta (prima veniva
-  chiuso: un test dell'interfaccia ora lo verifica, e fallisce con il comportamento
-  precedente).
+* `opencomputo-application::convertitore`: il ponte in Rust. `importa` (`.dcf` →
+  progetto, letto come un file qualunque), `esporta` (progetto in JSON → `.dcf` e
+  `<nome>.report.txt` scritti in modo atomico accanto), `confronta` (verifica di
+  fedeltà, eseguita dopo ogni conversione), `info`. Senza shell, ambiente ridotto,
+  cartella temporanea privata, 200 MB, 120 secondi, output limitato.
+* Servizio: `convertitore_stato`, `convertitore_imposta` (`convertitore.json`, poi
+  `DCF_BIN` se assoluto), `importa_con_convertitore`, `esporta_con_convertitore`,
+  `convertitore_confronta`, `convertitore_info`; la sessione si sostituisce solo a
+  conversione riuscita.
+* Interfaccia: menu File → import, export e configurazione, con avviso al primo uso,
+  verdetto della verifica, resoconto e dettaglio mostrati come testo. Se l'import
+  fallisce il progetto aperto resta (prima veniva chiuso: un test dell'interfaccia lo
+  verifica, e fallisce con il comportamento precedente).
 
 Test (eseguiti e passati il 2026-11-21, Linux):
-* `opencomputo-agent-api/tests/convertitore.rs` (7 prove, harness proprio: lo stesso
-  eseguibile fa da convertitore finto): configurazione (percorsi rifiutati, persistenza,
-  file danneggiato, rimozione), conversione riuscita anche con spazi e apici nel nome,
-  avvisi, errori del convertitore e risultati non validi con il progetto aperto
-  invariato, output di 5 MB troncato, variabili d'ambiente passate solo quelle
-  consentite, durata massima con processo terminato, cartelle temporanee rimosse.
-* Prove unitarie di `convertitore` (testo ripulito e troncato, percorsi, cartelle).
-* `ui-tests/convertitore.test.mjs` (3, convertitore finto in Node): primo uso con
-  avviso, resoconto mostrato come testo e non come HTML, errore con il progetto aperto
-  invariato, rimozione del programma.
+* `opencomputo-agent-api/tests/convertitore.rs` (9 prove, harness proprio: lo stesso
+  eseguibile fa da convertitore finto, con direzione dal contenuto, `confronta` e
+  `info`): configurazione (percorsi rifiutati, persistenza, file danneggiato,
+  rimozione); import con verifica superata, con differenze e con confronto impossibile,
+  anche con spazi e apici nel nome; errori del convertitore, risultati non validi e
+  progetti OpenComputo in ingresso rifiutati con il progetto aperto invariato; export con
+  file e resoconto accanto, sostituzione di un file esistente, verifica, destinazione
+  intatta se la conversione fallisce o non produce nulla, cartelle mancanti; `confronta`
+  in entrambi gli ordini e con due file dello stesso formato; `info`; output di 5 MB
+  troncato; variabili d'ambiente passate solo quelle consentite; durata massima con
+  processo terminato; cartelle temporanee rimosse.
+* Prove unitarie: testo ripulito e troncato, percorsi, cartelle temporanee, formato dal
+  contenuto, scrittura atomica, schema del convertitore uguale a quello corrente,
+  precedenza della configurazione su `DCF_BIN`.
+* `ui-tests/convertitore.test.mjs` (4, convertitore finto in Node): primo uso con
+  avviso, resoconto mostrato come testo e non come HTML, verdetto «PREZZI PRESERVATI»,
+  export con resoconto accanto, errore con il progetto aperto invariato, rimozione.
 
-Da verificare dal titolare: la conversione con il convertitore vero, su macOS e Windows.
+Da verificare dal titolare: la conversione con il convertitore vero (piano di collaudo
+della guida, round-trip sui file campione), su macOS e Windows.
 
 ## Prestazioni, difetti e vulnerabilità (2026-11-20)
 

@@ -57,10 +57,29 @@ pub enum Richiesta {
         /// File di origine.
         origine: PathBuf,
     },
-    /// Crea un progetto da un DCF con il convertitore esterno configurato (ADR 0027).
+    /// Crea un progetto da un DCF con il convertitore esterno configurato (ADR 0027) e
+    /// ne verifica la fedeltà.
     ImportaConConvertitore {
         /// Documento `.dcf` da convertire.
         origine: PathBuf,
+    },
+    /// Esporta il progetto in DCF con il convertitore esterno configurato e ne verifica
+    /// la fedeltà; il resoconto va accanto (`<nome>.report.txt`).
+    EsportaConConvertitore {
+        /// File `.dcf` da scrivere.
+        percorso: PathBuf,
+    },
+    /// Verifica di fedeltà del convertitore esterno tra un `.dcf` e un `.ocp`.
+    ConvertitoreConfronta {
+        /// Primo file.
+        file_a: PathBuf,
+        /// Secondo file.
+        file_b: PathBuf,
+    },
+    /// Informazioni del convertitore esterno su un documento `.dcf`.
+    ConvertitoreInfo {
+        /// Documento.
+        file: PathBuf,
     },
     /// Convertitore DCF esterno: programma configurato, se è utilizzabile, avviso.
     ConvertitoreStato {},
@@ -798,14 +817,42 @@ impl Servizio {
             }
             Richiesta::ImportaConConvertitore { origine } => {
                 let programma = convertitore::programma(&self.cartella())?;
-                let (s, rapporto, resoconto) =
+                let (s, rapporto, resoconto, verifica) =
                     casi_uso::importa_con_convertitore(&programma, &origine)?;
                 self.sostituisci(s, None)?;
                 Ok(json!({
                     "importazione": rapporto,
                     "convertitore": resoconto,
+                    "verifica": verifica,
                     "progetto": self.info()?,
                 }))
+            }
+            Richiesta::EsportaConConvertitore { percorso } => {
+                let programma = convertitore::programma(&self.cartella())?;
+                let e = casi_uso::esporta_con_convertitore(
+                    self.aperta()?.progetto(),
+                    &programma,
+                    &percorso,
+                )?;
+                Ok(json!(e))
+            }
+            Richiesta::ConvertitoreConfronta { file_a, file_b } => {
+                let programma = convertitore::programma(&self.cartella())?;
+                Ok(json!(opencomputo_application::convertitore::confronta(
+                    &programma,
+                    &file_a,
+                    &file_b,
+                    opencomputo_application::convertitore::DURATA_MASSIMA,
+                )))
+            }
+            Richiesta::ConvertitoreInfo { file } => {
+                let programma = convertitore::programma(&self.cartella())?;
+                let testo = opencomputo_application::convertitore::info(
+                    &programma,
+                    &file,
+                    opencomputo_application::convertitore::DURATA_MASSIMA,
+                )?;
+                Ok(json!({ "testo": testo }))
             }
             Richiesta::ConvertitoreStato {} => Ok(convertitore::stato(&self.cartella())),
             Richiesta::ConvertitoreImposta { programma } => {

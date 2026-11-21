@@ -50,9 +50,11 @@
   `sequenze_casuali`, `OPENCOMPUTO_PROVE=20000` per `file_danneggiati`.
 * Stampe di riferimento di programmi commerciali: solo per misurare l'impaginazione,
   mai nel repository; non riprodurre nomi, marchi o crediti (ADR 0015).
-* Convertitore DCF esterno (ADR 0027): programma di terzi scelto dall'utente, mai
-  incluso nel repository o nei pacchetti; solo il contratto della riga di comando, il
-  risultato si legge come un file non fidato. Nei test fa da convertitore finto
+* Convertitore DCF/OCP esterno (ADR 0027): CLI `dcf` di terzi scelta dall'utente, mai
+  inclusa nel repository o nei pacchetti (nemmeno il ponte Python `dcf_bridge.py`: è
+  riscritto in Rust in `opencomputo-application::convertitore`); solo il contratto della
+  riga di comando, il risultato si legge come un file non fidato, verifica `confronta`
+  dopo ogni conversione. Nei test fa da convertitore finto
   `opencomputo-agent-api/tests/convertitore.rs` (harness proprio).
 * DCF: mai decifrare flussi protetti né aggirare password (ADR 0006); in scrittura mai
   produrre protezioni, codici `Identity` o dichiarazioni di copyright di terzi

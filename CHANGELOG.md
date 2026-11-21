@@ -5,21 +5,25 @@ secondo il versionamento semantico.
 
 ## [Non rilasciato]
 
-### Convertitore DCF esterno (2026-11-21, ADR 0027)
+### Convertitore DCF/OCP esterno (2026-11-21, ADR 0027)
 
-* Menu File → «Importa DCF con convertitore esterno…»: importa un `.dcf` con un programma
-  di conversione scelto dall'utente e installato sul suo computer, secondo il contratto
-  `programma convert <origine> <uscita> --report <resoconto>`. OpenComputo non contiene
-  né distribuisce il convertitore; un avviso lo dice prima di sceglierlo.
+* Menu File → «Importa DCF con convertitore esterno…» ed «Esporta DCF con convertitore
+  esterno…»: conversione nei due sensi con il convertitore `dcf` (pacchetto
+  «primus-dcf») scelto dall'utente e installato sul suo computer, secondo il contratto
+  della guida di integrazione (il ponte di riferimento `dcf_bridge.py` è riscritto in
+  Rust). OpenComputo non contiene né distribuisce il convertitore; un avviso lo dice
+  prima di sceglierlo. In alternativa vale la variabile `DCF_BIN`.
+* Dopo ogni conversione, verifica di fedeltà con `dcf confronta`: verdetto «PREZZI
+  PRESERVATI» o differenze, con il resoconto della conversione. L'export scrive anche
+  `<nome>.report.txt` accanto al `.dcf`.
 * Esecuzione senza shell, con le sole variabili d'ambiente indispensabili, in una
-  cartella temporanea privata, con durata massima di 2 minuti e output limitato; il
-  progetto prodotto è letto e validato come qualunque file. Se la conversione non
-  riesce, il progetto aperto resta.
+  cartella temporanea privata, con 2 minuti e 200 MB al massimo e output limitato; il
+  progetto importato è letto e validato come qualunque file e sostituisce quello aperto
+  solo se la conversione riesce; il `.dcf` esportato si scrive solo a conversione
+  riuscita.
 * Servizio JSON: `convertitore_stato`, `convertitore_imposta`,
-  `importa_con_convertitore`.
-
-Revisione di prestazioni, difetti e vulnerabilità (2026-11-20; ADR 0026, dettagli e misure
-in `docs/STATO.md`).
+  `importa_con_convertitore`, `esporta_con_convertitore`, `convertitore_confronta`,
+  `convertitore_info`.
 
 ### Prestazioni (computo di 20.000 voci e 100.000 righi)
 

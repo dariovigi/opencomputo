@@ -31,7 +31,8 @@ La schermata iniziale offre:
 * **Nuovo progetto**: chiede il titolo e crea un progetto con un computo vuoto;
 * **Apri progetto**: un file `.ocp`;
 * **Importa da PriMus**: un file XPWE o DCF (vedi [PriMus](#importare-da-primus));
-  per i DCF protetti anche con un convertitore esterno installato sul computer;
+  per i DCF protetti anche con il convertitore DCF/OCP esterno installato sul computer,
+  che permette anche di esportare in DCF;
 * l'elenco dei **file recenti** di questo computer (la × lo toglie dall'elenco).
 
 A sinistra la navigazione: *Dati generali*, *Elenco prezzi*, *Categorie, WBS, computi*,
@@ -702,24 +703,35 @@ opencomputo report progetto.ocp sal --numero 2 --tradizionale
   I file protetti o con password non vengono letti: in quel caso esportare in XPWE da
   PriMus, oppure usare un convertitore esterno (punto seguente).
 * **DCF con un convertitore esterno** (menu File → «Importa DCF con convertitore
-  esterno…»): se hai un programma di conversione DCF → OpenComputo installato sul tuo
-  computer, OpenComputo può usarlo per importare un documento `.dcf`.
-  * Al primo uso si sceglie il programma (anche dopo, da File → «Convertitore DCF
-    esterno…», dove si può cambiare o togliere). OpenComputo non contiene né distribuisce
-    il convertitore e non ne verifica il funzionamento: usare solo un programma di cui ci
-    si fida e che si è autorizzati a usare sui documenti da convertire.
-  * Il programma deve accettare `programma convert <documento.dcf> <progetto.ocp>
-    --report <resoconto.txt>`, uscire con 0 se riesce e scrivere l'errore su stderr
-    altrimenti, e produrre un progetto OpenComputo.
-  * Il documento è elaborato in locale; OpenComputo non lo invia in rete. Il programma
+  esterno…» ed «Esporta DCF con convertitore esterno…»): se hai il convertitore DCF/OCP
+  `dcf` (pacchetto «primus-dcf») installato sul tuo computer, OpenComputo può usarlo per
+  importare un documento `.dcf` come progetto ed esportare il progetto in `.dcf`.
+  * Al primo uso si sceglie il programma (`dcf-linux`, `dcf.exe`; anche dopo, da File →
+    «Convertitore DCF esterno…», dove si può cambiare o togliere). In alternativa vale la
+    variabile d'ambiente `DCF_BIN` con il percorso assoluto. OpenComputo non contiene né
+    distribuisce il convertitore e non ne verifica il funzionamento: usare solo un
+    programma di cui ci si fida e che si è autorizzati a usare sui documenti da
+    convertire.
+  * Dopo ogni conversione OpenComputo chiede al convertitore la **verifica di fedeltà**
+    (`dcf confronta`): il verdetto «PREZZI PRESERVATI» dice che prezzi, quantità,
+    importi e SAL coincidono; altrimenti si vedono le differenze. Si vede anche il
+    resoconto della conversione (trasferimenti, avvisi, note).
+  * Import: il progetto si apre non salvato (usare «Salva con nome»); va controllato
+    nella vista «Problemi» come ogni file aperto. Se la conversione non riesce, il
+    progetto aperto resta com'era. Un file che è già un progetto OpenComputo si apre con
+    «Apri».
+  * Export: si sceglie dove salvare il `.dcf`; accanto viene scritto il resoconto
+    `<nome>.report.txt`. Il file è prodotto interamente dal convertitore; se la
+    conversione non riesce, un file esistente con lo stesso nome non viene toccato.
+  * I documenti sono elaborati in locale; OpenComputo non li invia in rete. Il programma
     riceve solo le variabili d'ambiente indispensabili, lavora in una cartella
-    temporanea che viene poi cancellata e viene fermato dopo 2 minuti.
-  * Al termine si vedono il resoconto del convertitore e le voci importate. Il progetto
-    prodotto viene controllato come ogni file aperto: guardare la vista «Problemi» prima
-    di usarlo. Se la conversione non riesce, il progetto aperto resta com'era.
+    temporanea che viene poi cancellata, viene fermato dopo 2 minuti e accetta file fino
+    a 200 MB.
   * Dal servizio JSON: `convertitore_imposta` (`{"programma": "/percorso/assoluto"}`, o
     `null` per toglierlo), `convertitore_stato`, `importa_con_convertitore`
-    (`{"origine": "documento.dcf"}`).
+    (`{"origine": "documento.dcf"}`), `esporta_con_convertitore`
+    (`{"percorso": "documento.dcf"}`), `convertitore_confronta`
+    (`{"file_a": …, "file_b": …}`), `convertitore_info` (`{"file": …}`).
 * **Export XPWE**: sperimentale. La struttura delle voci è ricostruita da documentazione
   pubblica e non è ancora stata confrontata con un export reale di PriMus: controllare il
   file in PriMus prima di consegnarlo.
